@@ -1,5 +1,4 @@
 const Subscription = require('../models/Subscription');
-const Device = require('../models/Device');
 const {
   calculateRenewalDate,
   calculateInitialPanelExpiry,
@@ -7,6 +6,7 @@ const {
   resolvePlanReference,
   resolveEmployeeReference,
   resolvePortalReference,
+  resolveOrCreateDevice,
 } = require('../services/subscription.service');
 const { logActivity } = require('../services/activityLog.service');
 
@@ -56,18 +56,17 @@ exports.createSubscription = async (req, res) => {
     const renewalDate = calculateRenewalDate(startingDate, durationType, durationValue);
     const panelExpiryDate = calculateInitialPanelExpiry(startingDate, panelAddedDays);
 
-    // Create the device first (when a MAC is given) so its _id can be linked
+    // Resolve the device first (when a MAC is given) so its _id can be linked
     // onto the subscription below — this is what lets the UI show which
-    // physical device a given subscription belongs to.
-    let savedDevice = null;
-    if (macAddress) {
-      const device = new Device({ customer, macAddress });
-      savedDevice = await device.save();
-
+    // physical device a given subscription belongs to. Reuses an existing
+    // device with the same MAC for this customer instead of creating a
+    // duplicate.
+    const { device: savedDevice, created: deviceCreated } = await resolveOrCreateDevice(customer, macAddress);
+    if (deviceCreated) {
       await logActivity({
         customer,
         action: 'Device Added',
-        description: `Device added with MAC ${macAddress}`,
+        description: `Device added with MAC ${savedDevice.macAddress}`,
         performedByName: req.user?.fullName || 'Owner',
         performedByType: req.user?.userType || 'Admin',
       });
@@ -119,6 +118,7 @@ exports.renewSubscription = async (req, res) => {
       planId,
       employeeId,
       portalId,
+      macAddress,
     } = req.body;
 
     if (!customer || (!plan && !planId) || priceUSD === undefined || priceUSD === null || !durationType || !durationValue || !startingDate) {
@@ -139,6 +139,26 @@ exports.renewSubscription = async (req, res) => {
       // Renewing keeps the same physical device — carry the link forward so
       // it survives the old-expires/new-created cycle instead of being lost.
       carriedDeviceId = oldSubscription?.device || null;
+    }
+
+    // An explicit macAddress on the renewal always wins over the carried-
+    // forward link — this is what lets an owner assign the correct device to
+    // a subscription that was renewed before subscriptions tracked one at
+    // all (reuses the existing device by MAC instead of duplicating it).
+    let deviceCreated = false;
+    if (macAddress) {
+      const resolved = await resolveOrCreateDevice(customer, macAddress);
+      carriedDeviceId = resolved.device._id;
+      deviceCreated = resolved.created;
+      if (deviceCreated) {
+        await logActivity({
+          customer,
+          action: 'Device Added',
+          description: `Device added with MAC ${resolved.device.macAddress}`,
+          performedByName: req.user?.fullName || 'Owner',
+          performedByType: req.user?.userType || 'Admin',
+        });
+      }
     }
 
     // Additive: same authoritative-value-from-ID resolution as

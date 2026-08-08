@@ -298,6 +298,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
         employeeName: selectedEmployee?.employeeName,
         portalId: selectedPortal?._id,
         portalUrl: selectedPortal?.portalUrl,
+        macAddress: subMacAddress,
       });
       resetSubForm();
       loadProfile();
@@ -514,7 +515,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
 
                 <TouchableOpacity
                   style={styles.renewButton}
-                  onPress={() => { setRenewTargetId(sub._id); setShowAddSubForm(false); }}
+                  onPress={() => { setRenewTargetId(sub._id); setSubMacAddress(deviceForSub(sub)?.macAddress || ''); setShowAddSubForm(false); }}
                 >
                   <Text style={styles.renewButtonText}>
                     {sub.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
@@ -592,6 +593,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                     <Text style={styles.expiredBadgeText}>{latestSubscription.status.toUpperCase()}</Text>
                   </View>
                 </View>
+                <Text style={styles.cardMeta}>Panel Added Days: {latestSubscription.panelAddedDays || 0}</Text>
                 <Text style={styles.cardMeta}>Renewal Date: {new Date(latestSubscription.renewalDate).toDateString()}</Text>
                 <Text style={styles.cardMeta}>Panel Expiry: {new Date(latestSubscription.panelExpiryDate).toDateString()}</Text>
                 {deviceForSub(latestSubscription) && (
@@ -600,7 +602,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
 
                 <TouchableOpacity
                   style={styles.renewButton}
-                  onPress={() => { setRenewTargetId(latestSubscription._id); setShowAddSubForm(false); }}
+                  onPress={() => { setRenewTargetId(latestSubscription._id); setSubMacAddress(deviceForSub(latestSubscription)?.macAddress || ''); setShowAddSubForm(false); }}
                 >
                   <Text style={styles.renewButtonText}>
                     {latestSubscription.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
@@ -680,18 +682,21 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                   ))}
                 </View>
 
-                {showAddSubForm && (
-                  <>
-                    <Text style={styles.label}>MAC Address (new device)</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. 00:1A:79:F2:11:4F"
-                      placeholderTextColor={colors.textMuted}
-                      value={subMacAddress}
-                      onChangeText={setSubMacAddress}
-                      autoCapitalize="characters"
-                    />
-                  </>
+                <Text style={styles.label}>
+                  {showRenewForm ? 'MAC Address (device for this subscription)' : 'MAC Address (new device)'}
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. 00:1A:79:F2:11:4F"
+                  placeholderTextColor={colors.textMuted}
+                  value={subMacAddress}
+                  onChangeText={setSubMacAddress}
+                  autoCapitalize="characters"
+                />
+                {showRenewForm && (
+                  <Text style={styles.hintNote}>
+                    Already correct? Leave as is. Known MACs are reused — this won't create a duplicate device.
+                  </Text>
                 )}
 
                 <SubDateField
@@ -758,6 +763,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                         </View>
                       </View>
                       <Text style={styles.cardMeta}>Starting: {new Date(s.startingDate).toDateString()}</Text>
+                      <Text style={styles.cardMeta}>Panel Added Days: {s.panelAddedDays || 0}</Text>
                       <Text style={styles.cardMeta}>Renewal Date: {new Date(s.renewalDate).toDateString()}</Text>
                       <Text style={styles.cardMeta}>Panel Expiry: {new Date(s.panelExpiryDate).toDateString()}</Text>
                       {deviceForSub(s) && (
@@ -766,7 +772,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                       {!alreadyFeaturedAtTop && (
                         <TouchableOpacity
                           style={styles.renewButton}
-                          onPress={() => { setRenewTargetId(s._id); setShowAddSubForm(false); }}
+                          onPress={() => { setRenewTargetId(s._id); setSubMacAddress(deviceForSub(s)?.macAddress || ''); setShowAddSubForm(false); }}
                         >
                           <Text style={styles.renewButtonText}>
                             {s.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}

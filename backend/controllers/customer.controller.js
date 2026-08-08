@@ -154,15 +154,13 @@ exports.createCustomer = async (req, res) => {
     });
     const savedCustomer = await customer.save();
 
-    let savedDevice = null;
-    if (macAddress) {
-      const device = new Device({ customer: savedCustomer._id, macAddress });
-      savedDevice = await device.save();
-
+    const { resolveOrCreateDevice } = require('../services/subscription.service');
+    const { device: savedDevice, created: deviceCreated } = await resolveOrCreateDevice(savedCustomer._id, macAddress);
+    if (deviceCreated) {
       await logActivity({
         customer: savedCustomer._id,
         action: 'Device Added',
-        description: `Device added with MAC ${macAddress}`,
+        description: `Device added with MAC ${savedDevice.macAddress}`,
         performedByName: req.user?.fullName || 'Owner',
         performedByType: req.user?.userType || 'Admin',
       });

@@ -54,6 +54,25 @@ const resolvePortalReference = async (portalId) => {
   return portalDoc ? { portalId: portalDoc._id, portalUrl: portalDoc.portalUrl } : null;
 };
 
+// Finds the customer's existing device by MAC and reuses it rather than
+// creating a duplicate — this is what lets an owner type in an already-known
+// MAC while renewing an old subscription (one created before subscriptions
+// tracked their device) and have it link to the real device instead of
+// spawning a second Device record with the same MAC. Only creates a new
+// device when no match exists for this customer. Returns null when no
+// macAddress is given, so every existing caller that doesn't send one keeps
+// working unchanged.
+const resolveOrCreateDevice = async (customer, macAddress) => {
+  if (!macAddress) return { device: null, created: false };
+  const Device = require('../models/Device');
+  const normalizedMac = String(macAddress).trim().toUpperCase();
+  const existing = await Device.findOne({ customer, macAddress: normalizedMac });
+  if (existing) return { device: existing, created: false };
+  const device = new Device({ customer, macAddress: normalizedMac });
+  const saved = await device.save();
+  return { device: saved, created: true };
+};
+
 module.exports = {
   calculateRenewalDate,
   calculateInitialPanelExpiry,
@@ -61,4 +80,5 @@ module.exports = {
   resolvePlanReference,
   resolveEmployeeReference,
   resolvePortalReference,
+  resolveOrCreateDevice,
 };
