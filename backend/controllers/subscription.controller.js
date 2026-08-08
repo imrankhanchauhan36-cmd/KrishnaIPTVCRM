@@ -56,20 +56,9 @@ exports.createSubscription = async (req, res) => {
     const renewalDate = calculateRenewalDate(startingDate, durationType, durationValue);
     const panelExpiryDate = calculateInitialPanelExpiry(startingDate, panelAddedDays);
 
-    const subscription = new Subscription({
-      customer,
-      plan: finalPlanName,
-      priceUSD,
-      startingDate: new Date(startingDate),
-      panelAddedDays: panelAddedDays ? Number(panelAddedDays) : 0,
-      renewalDate,
-      panelExpiryDate,
-      ...(planRef && { planId: planRef.planId }),
-      ...(employeeRef ? { employeeId: employeeRef.employeeId, employeeName: employeeRef.employeeName } : { employeeName }),
-      ...(portalRef ? { portalId: portalRef.portalId, portalUrl: portalRef.portalUrl } : { portalUrl }),
-    });
-    const saved = await subscription.save();
-
+    // Create the device first (when a MAC is given) so its _id can be linked
+    // onto the subscription below — this is what lets the UI show which
+    // physical device a given subscription belongs to.
     let savedDevice = null;
     if (macAddress) {
       const device = new Device({ customer, macAddress });
@@ -83,6 +72,21 @@ exports.createSubscription = async (req, res) => {
         performedByType: req.user?.userType || 'Admin',
       });
     }
+
+    const subscription = new Subscription({
+      customer,
+      plan: finalPlanName,
+      priceUSD,
+      startingDate: new Date(startingDate),
+      panelAddedDays: panelAddedDays ? Number(panelAddedDays) : 0,
+      renewalDate,
+      panelExpiryDate,
+      ...(planRef && { planId: planRef.planId }),
+      ...(employeeRef ? { employeeId: employeeRef.employeeId, employeeName: employeeRef.employeeName } : { employeeName }),
+      ...(portalRef ? { portalId: portalRef.portalId, portalUrl: portalRef.portalUrl } : { portalUrl }),
+      ...(savedDevice && { device: savedDevice._id }),
+    });
+    const saved = await subscription.save();
 
     await logActivity({
       customer,
@@ -121,6 +125,7 @@ exports.renewSubscription = async (req, res) => {
       return res.status(400).json({ message: 'Missing required renewal fields' });
     }
 
+    let carriedDeviceId = null;
     if (oldSubscriptionId) {
       const oldSubscription = await Subscription.findById(oldSubscriptionId);
       const expireUpdate = { status: 'Expired' };
@@ -131,6 +136,9 @@ exports.renewSubscription = async (req, res) => {
         expireUpdate.followUpStatus = 'Converted';
       }
       await Subscription.findByIdAndUpdate(oldSubscriptionId, expireUpdate);
+      // Renewing keeps the same physical device — carry the link forward so
+      // it survives the old-expires/new-created cycle instead of being lost.
+      carriedDeviceId = oldSubscription?.device || null;
     }
 
     // Additive: same authoritative-value-from-ID resolution as
@@ -158,6 +166,7 @@ exports.renewSubscription = async (req, res) => {
       ...(planRef && { planId: planRef.planId }),
       ...(employeeRef && { employeeId: employeeRef.employeeId }),
       ...(portalRef && { portalId: portalRef.portalId }),
+      ...(carriedDeviceId && { device: carriedDeviceId }),
     });
     const saved = await newSubscription.save();
 

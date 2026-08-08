@@ -19,6 +19,14 @@ const subscriptionSchema = new mongoose.Schema(
     employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmployeeMaster' },
     portalUrl: { type: String },
     portalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Portal' },
+    // Which physical device this subscription is for — a customer can run
+    // several concurrent subscriptions, one per device. Set at creation time
+    // (when a macAddress is given) and carried forward on renewal so the
+    // link survives the old-subscription-expires/new-subscription-created
+    // cycle. Absent on every subscription created before this feature, by
+    // design — no backfill; there is no reliable way to infer it after the
+    // fact for existing multi-device customers.
+    device: { type: mongoose.Schema.Types.ObjectId, ref: 'Device' },
     status: { type: String, enum: ['Active', 'Expired'], default: 'Active' },
     // Funnel outcome of a trial (priceUSD === 0) subscription — separate from
     // followUpStatus below, which tracks contact/action state day to day.

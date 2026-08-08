@@ -201,6 +201,7 @@ exports.createCustomer = async (req, res) => {
         ...(planRef && { planId: planRef.planId }),
         ...(employeeRef && { employeeId: employeeRef.employeeId }),
         ...(portalRef && { portalId: portalRef.portalId }),
+        ...(savedDevice && { device: savedDevice._id }),
       });
       savedSubscription = await subscription.save();
 

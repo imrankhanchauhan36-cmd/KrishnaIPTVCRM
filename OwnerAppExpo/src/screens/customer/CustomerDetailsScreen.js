@@ -261,6 +261,11 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
   const latestSubscription = subscriptions[0];
   const subscriptionToRenew = subscriptions.find((s) => s._id === renewTargetId) || null;
   const showRenewForm = !!renewTargetId;
+  // A customer can run several concurrent subscriptions (one per device);
+  // this is the only way to tell which physical device a given subscription
+  // card belongs to. Only populated for subscriptions created or renewed
+  // after this field was added — older records simply show nothing here.
+  const deviceForSub = (sub) => devices.find((d) => d._id === sub.device);
 
   const resetSubForm = () => {
     setSelectedPlan(null);
@@ -482,6 +487,9 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                 <Text style={styles.cardMeta}>Panel Added Days: {sub.panelAddedDays || 0}</Text>
                 <Text style={styles.cardMeta}>Renewal Date: {new Date(sub.renewalDate).toDateString()}</Text>
                 <Text style={styles.cardMeta}>Panel Expiry: {new Date(sub.panelExpiryDate).toDateString()}</Text>
+                {deviceForSub(sub) && (
+                  <Text style={styles.cardMeta}>MAC: {deviceForSub(sub).macAddress}</Text>
+                )}
                 <View style={styles.panelDaysRow}>
                   <Text style={styles.cardMeta}>
                     Renewal (subscription): {new Date(sub.renewalDate).toDateString()}
@@ -586,6 +594,9 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                 </View>
                 <Text style={styles.cardMeta}>Renewal Date: {new Date(latestSubscription.renewalDate).toDateString()}</Text>
                 <Text style={styles.cardMeta}>Panel Expiry: {new Date(latestSubscription.panelExpiryDate).toDateString()}</Text>
+                {deviceForSub(latestSubscription) && (
+                  <Text style={styles.cardMeta}>MAC: {deviceForSub(latestSubscription).macAddress}</Text>
+                )}
 
                 <TouchableOpacity
                   style={styles.renewButton}
@@ -730,22 +741,44 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
             {subscriptions.filter((s) => s.status !== 'Active').length > 0 && (
               <>
                 <Text style={styles.historySectionTitle}>Past Subscriptions</Text>
-                {subscriptions.filter((s) => s.status !== 'Active').map((s) => (
-                  <View key={s._id} style={styles.card}>
-                    <View style={styles.cardHeaderRow}>
-                      <Text style={styles.cardTitle}>{s.plan} — ${s.priceUSD}</Text>
-                      <View style={styles.expiredBadge}>
-                        <Text style={styles.expiredBadgeText}>{s.status.toUpperCase()}</Text>
+                {subscriptions.filter((s) => s.status !== 'Active').map((s) => {
+                  // The single "no active subscriptions at all" card above already
+                  // features the latest one with its own Renew button — skip a
+                  // second, redundant one here for that specific subscription.
+                  // Every other past subscription (the common case: this one
+                  // expired while sibling devices' subscriptions are still
+                  // Active) gets its own Renew button, which it never had before.
+                  const alreadyFeaturedAtTop = activeSubscriptions.length === 0 && s._id === latestSubscription?._id;
+                  return (
+                    <View key={s._id} style={styles.card}>
+                      <View style={styles.cardHeaderRow}>
+                        <Text style={styles.cardTitle}>{s.plan} — ${s.priceUSD}</Text>
+                        <View style={styles.expiredBadge}>
+                          <Text style={styles.expiredBadgeText}>{s.status.toUpperCase()}</Text>
+                        </View>
                       </View>
+                      <Text style={styles.cardMeta}>Starting: {new Date(s.startingDate).toDateString()}</Text>
+                      <Text style={styles.cardMeta}>Renewal Date: {new Date(s.renewalDate).toDateString()}</Text>
+                      <Text style={styles.cardMeta}>Panel Expiry: {new Date(s.panelExpiryDate).toDateString()}</Text>
+                      {deviceForSub(s) && (
+                        <Text style={styles.cardMeta}>MAC: {deviceForSub(s).macAddress}</Text>
+                      )}
+                      {!alreadyFeaturedAtTop && (
+                        <TouchableOpacity
+                          style={styles.renewButton}
+                          onPress={() => { setRenewTargetId(s._id); setShowAddSubForm(false); }}
+                        >
+                          <Text style={styles.renewButtonText}>
+                            {s.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity onPress={() => handleDeleteSubscription(s._id)}>
+                        <Text style={styles.deleteLink}>Delete</Text>
+                      </TouchableOpacity>
                     </View>
-                    <Text style={styles.cardMeta}>Starting: {new Date(s.startingDate).toDateString()}</Text>
-                    <Text style={styles.cardMeta}>Renewal Date: {new Date(s.renewalDate).toDateString()}</Text>
-                    <Text style={styles.cardMeta}>Panel Expiry: {new Date(s.panelExpiryDate).toDateString()}</Text>
-                    <TouchableOpacity onPress={() => handleDeleteSubscription(s._id)}>
-                      <Text style={styles.deleteLink}>Delete</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
+                  );
+                })}
               </>
             )}
 
