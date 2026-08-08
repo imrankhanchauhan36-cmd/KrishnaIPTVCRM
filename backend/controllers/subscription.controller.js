@@ -4,6 +4,9 @@ const {
   calculateRenewalDate,
   calculateInitialPanelExpiry,
   calculateRemainingDaysNeeded,
+  resolvePlanReference,
+  resolveEmployeeReference,
+  resolvePortalReference,
 } = require('../services/subscription.service');
 const { logActivity } = require('../services/activityLog.service');
 
@@ -20,19 +23,50 @@ exports.getSubscriptionsByCustomer = async (req, res) => {
 
 exports.createSubscription = async (req, res) => {
   try {
-    const { customer, plan, priceUSD, durationType, durationValue, startingDate, panelAddedDays, macAddress } = req.body;
+    const {
+      customer,
+      plan,
+      priceUSD,
+      durationType,
+      durationValue,
+      startingDate,
+      panelAddedDays,
+      macAddress,
+      planId,
+      employeeId,
+      employeeName,
+      portalId,
+      portalUrl,
+    } = req.body;
+
+    // A customer may legitimately run multiple concurrent Active subscriptions
+    // (e.g. one per device/panel), so creating a new one is never blocked by
+    // an existing Active subscription — each is independent.
+
+    // Additive: when a real Plan Master / Employee Master / Portal Master
+    // record is referenced, its current value is authoritative — never the
+    // client-typed text. Falls back to whatever was sent when no ID is
+    // given, so any caller that doesn't yet send planId/employeeId/portalId
+    // keeps working exactly as before.
+    const planRef = await resolvePlanReference(planId);
+    const employeeRef = await resolveEmployeeReference(employeeId);
+    const portalRef = await resolvePortalReference(portalId);
+    const finalPlanName = planRef ? planRef.planName : plan;
 
     const renewalDate = calculateRenewalDate(startingDate, durationType, durationValue);
     const panelExpiryDate = calculateInitialPanelExpiry(startingDate, panelAddedDays);
 
     const subscription = new Subscription({
       customer,
-      plan,
+      plan: finalPlanName,
       priceUSD,
       startingDate: new Date(startingDate),
       panelAddedDays: panelAddedDays ? Number(panelAddedDays) : 0,
       renewalDate,
       panelExpiryDate,
+      ...(planRef && { planId: planRef.planId }),
+      ...(employeeRef ? { employeeId: employeeRef.employeeId, employeeName: employeeRef.employeeName } : { employeeName }),
+      ...(portalRef ? { portalId: portalRef.portalId, portalUrl: portalRef.portalUrl } : { portalUrl }),
     });
     const saved = await subscription.save();
 
@@ -53,7 +87,7 @@ exports.createSubscription = async (req, res) => {
     await logActivity({
       customer,
       action: 'Subscription Started',
-      description: `Started "${plan}" plan ($${priceUSD}), renews on ${renewalDate.toDateString()}`,
+      description: `Started "${finalPlanName}" plan ($${priceUSD}), renews on ${renewalDate.toDateString()}`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
     });
@@ -67,37 +101,70 @@ exports.createSubscription = async (req, res) => {
 // RENEW: expires the old subscription, creates a fresh Active one
 exports.renewSubscription = async (req, res) => {
   try {
-    const { oldSubscriptionId, customer, plan, priceUSD, durationType, durationValue, startingDate, panelAddedDays, employeeName, portalUrl } = req.body;
+    const {
+      oldSubscriptionId,
+      customer,
+      plan,
+      priceUSD,
+      durationType,
+      durationValue,
+      startingDate,
+      panelAddedDays,
+      employeeName,
+      portalUrl,
+      planId,
+      employeeId,
+      portalId,
+    } = req.body;
 
-    if (!customer || !plan || priceUSD === undefined || priceUSD === null || !durationType || !durationValue || !startingDate) {
+    if (!customer || (!plan && !planId) || priceUSD === undefined || priceUSD === null || !durationType || !durationValue || !startingDate) {
       return res.status(400).json({ message: 'Missing required renewal fields' });
     }
 
     if (oldSubscriptionId) {
-      await Subscription.findByIdAndUpdate(oldSubscriptionId, { status: 'Expired' });
+      const oldSubscription = await Subscription.findById(oldSubscriptionId);
+      const expireUpdate = { status: 'Expired' };
+      // Trial -> paid conversion: mark the old trial's funnel outcome as
+      // Converted whenever it's being renewed into a paid plan.
+      if (oldSubscription && oldSubscription.priceUSD === 0 && Number(priceUSD) > 0) {
+        expireUpdate.trialStatus = 'Converted';
+        expireUpdate.followUpStatus = 'Converted';
+      }
+      await Subscription.findByIdAndUpdate(oldSubscriptionId, expireUpdate);
     }
+
+    // Additive: same authoritative-value-from-ID resolution as
+    // createSubscription, with the same unchanged fallback for callers that
+    // don't send planId/employeeId/portalId.
+    const planRef = await resolvePlanReference(planId);
+    const employeeRef = await resolveEmployeeReference(employeeId);
+    const portalRef = await resolvePortalReference(portalId);
+    const finalPlanName = planRef ? planRef.planName : plan;
 
     const renewalDate = calculateRenewalDate(startingDate, durationType, durationValue);
     const panelExpiryDate = calculateInitialPanelExpiry(startingDate, panelAddedDays);
 
     const newSubscription = new Subscription({
       customer,
-      plan,
+      plan: finalPlanName,
       priceUSD: Number(priceUSD),
       startingDate: new Date(startingDate),
       panelAddedDays: panelAddedDays ? Number(panelAddedDays) : 0,
       renewalDate,
       panelExpiryDate,
-      employeeName,
-      portalUrl,
+      employeeName: employeeRef ? employeeRef.employeeName : employeeName,
+      portalUrl: portalRef ? portalRef.portalUrl : portalUrl,
       status: 'Active',
+      ...(planRef && { planId: planRef.planId }),
+      ...(employeeRef && { employeeId: employeeRef.employeeId }),
+      ...(portalRef && { portalId: portalRef.portalId }),
     });
     const saved = await newSubscription.save();
 
     await logActivity({
       customer,
       action: 'Subscription Renewed',
-      description: `Renewed with plan "${plan}", renews on ${renewalDate.toDateString()}`,
+      description: `Renewed with plan "${finalPlanName}", renews on ${renewalDate.toDateString()}`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
     });
@@ -144,6 +211,43 @@ exports.addPanelDays = async (req, res) => {
           ? `Panel covered until ${currentExpiry.toDateString()}. ${remainingDays} more day(s) needed to reach renewal date.`
           : `Panel is fully covered until the renewal date.`,
     });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+// PATCH /:id/status - update trialStatus and/or followUpStatus only
+exports.updateSubscriptionStatus = async (req, res) => {
+  try {
+    const { trialStatus, followUpStatus } = req.body;
+    const update = {};
+    if (trialStatus !== undefined) update.trialStatus = trialStatus;
+    if (followUpStatus !== undefined) update.followUpStatus = followUpStatus;
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ message: 'Provide trialStatus and/or followUpStatus to update' });
+    }
+
+    const subscription = await Subscription.findByIdAndUpdate(req.params.id, update, {
+      new: true,
+      runValidators: true,
+    });
+    if (!subscription) return res.status(404).json({ message: 'Subscription not found' });
+
+    await logActivity({
+      customer: subscription.customer,
+      action: 'Follow-up Status Updated',
+      description: [
+        trialStatus ? `Trial: ${trialStatus}` : null,
+        followUpStatus ? `Follow-up: ${followUpStatus}` : null,
+      ]
+        .filter(Boolean)
+        .join(' — '),
+      performedByName: req.user?.fullName || 'Owner',
+      performedByType: req.user?.userType || 'Admin',
+    });
+
+    res.json(subscription);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

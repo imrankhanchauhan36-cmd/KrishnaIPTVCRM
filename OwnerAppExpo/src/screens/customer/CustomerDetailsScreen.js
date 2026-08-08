@@ -22,11 +22,43 @@ import {
   renewSubscription,
   deleteSubscription,
   getPlans,
+  getActiveEmployees,
+  getActivePortals,
   addPanelDays,
+  updateSubscriptionStatus,
+  getCustomerNotes,
+  createCustomerNote,
+  getCustomerTimeline,
 } from '../../services/api';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
 
-const TABS = ['Overview', 'Devices', 'Subscriptions', 'History'];
+const TABS = ['Overview', 'Subscription', 'Notes', 'Timeline'];
+const FOLLOW_UP_CHIPS = ['Call Today', 'WhatsApp Today', 'No Response', 'Call Back Tomorrow'];
+
+// Local accent colors for timeline event types the shared theme doesn't
+// define (orange/purple) — kept muted to match the app's existing sober
+// palette rather than introducing bright new tones.
+const EVENT_META = {
+  customer_created: { icon: '🟢', color: colors.success, bg: colors.successBg },
+  customer_updated: { icon: '🔵', color: colors.primary, bg: colors.primaryLight },
+  phone_changed: { icon: '🔴', color: colors.danger, bg: colors.dangerBg },
+  customer_archived: { icon: '⚫', color: colors.textMuted, bg: colors.surfaceAlt },
+  device_added: { icon: '🟢', color: colors.success, bg: colors.successBg },
+  device_updated: { icon: '🔵', color: colors.primary, bg: colors.primaryLight },
+  mac_changed: { icon: '🔴', color: colors.danger, bg: colors.dangerBg },
+  device_removed: { icon: '🔴', color: colors.danger, bg: colors.dangerBg },
+  trial_started: { icon: '🟠', color: '#b45309', bg: '#fef3e0' },
+  subscription_created: { icon: '🟢', color: colors.success, bg: colors.successBg },
+  trial_converted: { icon: '🟢', color: colors.success, bg: colors.successBg },
+  plan_changed: { icon: '🟠', color: '#b45309', bg: '#fef3e0' },
+  price_changed: { icon: '🟠', color: '#b45309', bg: '#fef3e0' },
+  subscription_renewed: { icon: '🟢', color: colors.success, bg: colors.successBg },
+  subscription_removed: { icon: '🔴', color: colors.danger, bg: colors.dangerBg },
+  panel_days_added: { icon: '🔵', color: colors.primary, bg: colors.primaryLight },
+  followup_status_changed: { icon: '🔵', color: colors.primary, bg: colors.primaryLight },
+  note_added: { icon: '🟣', color: '#6b46c1', bg: '#f2edfc' },
+};
+const DEFAULT_EVENT_META = { icon: '⚪', color: colors.textMuted, bg: colors.surfaceAlt };
 
 const formatDateDisplay = (date) => {
   if (!date) return '';
@@ -80,27 +112,66 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
   const [editMac, setEditMac] = useState('');
   const [editDeviceName, setEditDeviceName] = useState('');
   const [subMacAddress, setSubMacAddress] = useState('');
+  const [showAddDeviceForm, setShowAddDeviceForm] = useState(false);
+  const [newDeviceMac, setNewDeviceMac] = useState('');
+  const [newDeviceName, setNewDeviceName] = useState('');
 
   const [plans, setPlans] = useState([]);
-  const [showRenewForm, setShowRenewForm] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [portals, setPortals] = useState([]);
+  // A customer can have several concurrent Active subscriptions (one per
+  // device), so "which one is being renewed" is tracked by id rather than
+  // a single global flag.
+  const [renewTargetId, setRenewTargetId] = useState(null);
   const [showAddSubForm, setShowAddSubForm] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [selectedPortal, setSelectedPortal] = useState(null);
   const [subStartingDate, setSubStartingDate] = useState(new Date().toISOString());
   const [subPanelAddedDays, setSubPanelAddedDays] = useState('');
-  const [showAddPanelDays, setShowAddPanelDays] = useState(false);
+  // Same reasoning as renewTargetId: which subscription's "+ Add Panel Days"
+  // form is open, since a customer can have several Active subscriptions.
+  const [panelDaysTargetId, setPanelDaysTargetId] = useState(null);
   const [panelDaysToAdd, setPanelDaysToAdd] = useState('');
   const [panelDaysMessage, setPanelDaysMessage] = useState('');
+  const [notes, setNotes] = useState([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [timeline, setTimeline] = useState([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineLoaded, setTimelineLoaded] = useState(false);
 
   useEffect(() => {
     getPlans().then(setPlans).catch(() => {});
+    getActiveEmployees().then(setEmployees).catch(() => {});
+    getActivePortals().then(setPortals).catch(() => {});
   }, []);
+
+  // Timeline is read-only and additive on top of the profile load — fetched
+  // lazily the first time its tab is opened rather than on every screen
+  // visit, since most visits won't check it.
+  useEffect(() => {
+    if (activeTab !== 'Timeline' || timelineLoaded) return;
+    setTimelineLoading(true);
+    getCustomerTimeline(customer._id)
+      .then((data) => {
+        setTimeline(data || []);
+        setTimelineLoaded(true);
+      })
+      .catch(() => Alert.alert('Error', 'Could not load timeline.'))
+      .finally(() => setTimelineLoading(false));
+  }, [activeTab, timelineLoaded, customer._id]);
 
   const loadProfile = useCallback(async () => {
     try {
-      const data = await getCustomerProfile(customer._id);
+      const [data, notesData] = await Promise.all([
+        getCustomerProfile(customer._id),
+        getCustomerNotes(customer._id).catch(() => []),
+      ]);
       setDevices(data.devices || []);
       setSubscriptions(data.subscriptions || []);
       setActivityLog(data.activityLog || []);
+      setNotes(notesData || []);
     } catch (error) {
       Alert.alert('Error', 'Could not load customer profile.');
     } finally {
@@ -155,14 +226,50 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
     ]);
   };
 
-  const activeSubscription = subscriptions.find((s) => s.status === 'Active');
+  // Adding a device on its own must never touch subscription state — this
+  // calls the plain device-creation endpoint directly, not the subscription
+  // flow, so it works regardless of whether the customer already has an
+  // active subscription.
+  const handleAddDevice = async () => {
+    if (!newDeviceMac.trim()) {
+      Alert.alert('Missing info', 'MAC Address is required.');
+      return;
+    }
+    try {
+      await createDevice({
+        customer: customer._id,
+        macAddress: newDeviceMac.trim(),
+        deviceName: newDeviceName.trim(),
+      });
+      setNewDeviceMac('');
+      setNewDeviceName('');
+      setShowAddDeviceForm(false);
+      loadProfile();
+    } catch (error) {
+      Alert.alert('Error', 'Could not add device.');
+    }
+  };
+
+  // A customer can have multiple concurrent Active subscriptions (e.g. one
+  // per device), so every Active one gets its own card rather than only
+  // ever showing the first match.
+  const activeSubscriptions = subscriptions.filter((s) => s.status === 'Active');
+  // subscriptions is already sorted newest-first by the backend, so [0] is
+  // the latest regardless of status. A customer whose latest subscription
+  // has already expired must still be able to renew from it — Renew must
+  // not depend on an Active subscription existing.
+  const latestSubscription = subscriptions[0];
+  const subscriptionToRenew = subscriptions.find((s) => s._id === renewTargetId) || null;
+  const showRenewForm = !!renewTargetId;
 
   const resetSubForm = () => {
     setSelectedPlan(null);
+    setSelectedEmployee(null);
+    setSelectedPortal(null);
     setSubStartingDate(new Date().toISOString());
     setSubPanelAddedDays('');
     setSubMacAddress('');
-    setShowRenewForm(false);
+    setRenewTargetId(null);
     setShowAddSubForm(false);
   };
 
@@ -173,14 +280,19 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
     }
     try {
       await renewSubscription({
-        oldSubscriptionId: activeSubscription?._id,
+        oldSubscriptionId: subscriptionToRenew?._id,
         customer: customer._id,
         plan: selectedPlan.name,
+        planId: selectedPlan._id,
         priceUSD: selectedPlan.priceUSD,
         durationType: selectedPlan.durationType,
         durationValue: selectedPlan.durationValue,
         startingDate: subStartingDate,
         panelAddedDays: subPanelAddedDays,
+        employeeId: selectedEmployee?._id,
+        employeeName: selectedEmployee?.employeeName,
+        portalId: selectedPortal?._id,
+        portalUrl: selectedPortal?.portalUrl,
       });
       resetSubForm();
       loadProfile();
@@ -198,30 +310,83 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
       await createSubscription({
         customer: customer._id,
         plan: selectedPlan.name,
+        planId: selectedPlan._id,
         priceUSD: selectedPlan.priceUSD,
         durationType: selectedPlan.durationType,
         durationValue: selectedPlan.durationValue,
         startingDate: subStartingDate,
         panelAddedDays: subPanelAddedDays,
         macAddress: subMacAddress,
+        employeeId: selectedEmployee?._id,
+        employeeName: selectedEmployee?.employeeName,
+        portalId: selectedPortal?._id,
+        portalUrl: selectedPortal?.portalUrl,
       });
       resetSubForm();
       loadProfile();
     } catch (error) {
-      Alert.alert('Error', 'Could not add subscription.');
+      if (error.status === 409) {
+        Alert.alert(
+          'Already Has an Active Subscription',
+          error.message || 'This customer already has an active subscription. Use Renew instead.'
+        );
+      } else {
+        Alert.alert('Error', 'Could not add subscription.');
+      }
     }
   };
 
-  const handleAddPanelDaysSubmit = async () => {
+  const handleSetFollowUpStatus = async (subscriptionId, followUpStatus) => {
+    try {
+      await updateSubscriptionStatus(subscriptionId, { followUpStatus });
+      loadProfile();
+    } catch (error) {
+      Alert.alert('Error', 'Could not update follow-up status.');
+    }
+  };
+
+  const handleMarkTrialLost = (subscriptionId) => {
+    Alert.alert('Mark Trial as Lost', 'This trial will be marked as lost. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Mark Lost',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await updateSubscriptionStatus(subscriptionId, { trialStatus: 'Lost', followUpStatus: 'Lost' });
+            loadProfile();
+          } catch (error) {
+            Alert.alert('Error', 'Could not update trial status.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleAddNote = async () => {
+    if (!newNoteText.trim()) return;
+    setSavingNote(true);
+    try {
+      await createCustomerNote({ customer: customer._id, note: newNoteText.trim() });
+      setNewNoteText('');
+      loadProfile();
+    } catch (error) {
+      Alert.alert('Error', 'Could not save note.');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleAddPanelDaysSubmit = async (subscriptionId) => {
     if (!panelDaysToAdd || Number(panelDaysToAdd) <= 0) {
       Alert.alert('Missing info', 'Please enter a valid number of days.');
       return;
     }
     try {
-      const result = await addPanelDays(activeSubscription._id, Number(panelDaysToAdd));
+      const result = await addPanelDays(subscriptionId, Number(panelDaysToAdd));
       setPanelDaysMessage(result.message);
       setPanelDaysToAdd('');
-      setShowAddPanelDays(false);
+      setPanelDaysTargetId(null);
       loadProfile();
       Alert.alert('Panel Days Added', result.message);
     } catch (error) {
@@ -285,109 +450,79 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
 
       <ScrollView contentContainerStyle={styles.tabContent}>
         {activeTab === 'Overview' && (
-          <View style={styles.statRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{devices.length}</Text>
-              <Text style={styles.statLabel}>Devices</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{subscriptions.length}</Text>
-              <Text style={styles.statLabel}>Subscriptions</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{customer.status}</Text>
-              <Text style={styles.statLabel}>Status</Text>
-            </View>
-          </View>
-        )}
-
-        {activeTab === 'Devices' && (
           <View>
-            <Text style={styles.hintNote}>Tap a device to edit its MAC address or name.</Text>
-
-            {devices.length === 0 && (
-              <Text style={styles.emptyText}>
-                No devices yet. Devices are added when you create a subscription.
-              </Text>
-            )}
-
-            {devices.map((d) => (
-              <View key={d._id} style={styles.card}>
-                {editingDeviceId === d._id ? (
-                  <View>
-                    <Text style={styles.label}>Device Name (optional)</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Device Name"
-                      placeholderTextColor={colors.textMuted}
-                      value={editDeviceName}
-                      onChangeText={setEditDeviceName}
-                    />
-                    <Text style={styles.label}>MAC Address *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="MAC Address"
-                      placeholderTextColor={colors.textMuted}
-                      value={editMac}
-                      onChangeText={setEditMac}
-                      autoCapitalize="characters"
-                    />
-                    <TouchableOpacity style={styles.saveSmallButton} onPress={handleSaveEditDevice}>
-                      <Text style={styles.saveSmallButtonText}>Save Changes</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.cancelSmallButton} onPress={handleCancelEditDevice}>
-                      <Text style={styles.cancelSmallButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity onPress={() => handleStartEditDevice(d)}>
-                    <Text style={styles.cardTitle}>{d.deviceName || d.deviceType}</Text>
-                    <Text style={styles.cardMeta}>MAC: {d.macAddress}</Text>
-                    <Text style={styles.editHint}>Tap to edit</Text>
-                  </TouchableOpacity>
-                )}
+            <View style={styles.statRow}>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{devices.length}</Text>
+                <Text style={styles.statLabel}>Devices</Text>
               </View>
-            ))}
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{subscriptions.length}</Text>
+                <Text style={styles.statLabel}>Subscriptions</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{customer.status}</Text>
+                <Text style={styles.statLabel}>Status</Text>
+              </View>
+            </View>
           </View>
         )}
 
-
-        {activeTab === 'Subscriptions' && (
+        {activeTab === 'Subscription' && (
           <View>
-            {activeSubscription && (
-              <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors.success }]}>
+            {activeSubscriptions.map((sub) => (
+              <View key={sub._id} style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors.success }]}>
                 <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>{activeSubscription.plan} — ${activeSubscription.priceUSD}</Text>
+                  <Text style={styles.cardTitle}>{sub.plan} — ${sub.priceUSD}</Text>
                   <View style={styles.activeBadge}>
                     <Text style={styles.activeBadgeText}>ACTIVE</Text>
                   </View>
                 </View>
-                <Text style={styles.cardMeta}>Starting: {new Date(activeSubscription.startingDate).toDateString()}</Text>
-                <Text style={styles.cardMeta}>Panel Added Days: {activeSubscription.panelAddedDays || 0}</Text>
-                <Text style={styles.cardMeta}>Renewal Date: {new Date(activeSubscription.renewalDate).toDateString()}</Text>
-                <Text style={styles.cardMeta}>Panel Expiry: {new Date(activeSubscription.panelExpiryDate).toDateString()}</Text>
+                <Text style={styles.cardMeta}>Starting: {new Date(sub.startingDate).toDateString()}</Text>
+                <Text style={styles.cardMeta}>Panel Added Days: {sub.panelAddedDays || 0}</Text>
+                <Text style={styles.cardMeta}>Renewal Date: {new Date(sub.renewalDate).toDateString()}</Text>
+                <Text style={styles.cardMeta}>Panel Expiry: {new Date(sub.panelExpiryDate).toDateString()}</Text>
                 <View style={styles.panelDaysRow}>
                   <Text style={styles.cardMeta}>
-                    Renewal (subscription): {new Date(activeSubscription.renewalDate).toDateString()}
+                    Renewal (subscription): {new Date(sub.renewalDate).toDateString()}
                   </Text>
                 </View>
+
+                {(sub.trialStatus && sub.trialStatus !== 'Pending') ||
+                (sub.followUpStatus && sub.followUpStatus !== 'Pending') ? (
+                  <View style={styles.trialStatusRow}>
+                    {sub.trialStatus && sub.trialStatus !== 'Pending' && (
+                      <View style={styles.trialStatusBadge}>
+                        <Text style={styles.trialStatusBadgeText}>{sub.trialStatus}</Text>
+                      </View>
+                    )}
+                    {sub.followUpStatus && sub.followUpStatus !== 'Pending' && (
+                      <View style={styles.followUpStatusBadge}>
+                        <Text style={styles.followUpStatusBadgeText}>{sub.followUpStatus}</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+
                 <TouchableOpacity
                   style={styles.renewButton}
-                  onPress={() => { setShowRenewForm(true); setShowAddSubForm(false); }}
+                  onPress={() => { setRenewTargetId(sub._id); setShowAddSubForm(false); }}
                 >
-                  <Text style={styles.renewButtonText}>Renew Subscription</Text>
+                  <Text style={styles.renewButtonText}>
+                    {sub.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.addPanelDaysButton}
-                  onPress={() => setShowAddPanelDays(!showAddPanelDays)}
+                  onPress={() => setPanelDaysTargetId(panelDaysTargetId === sub._id ? null : sub._id)}
                 >
                   <Text style={styles.addPanelDaysButtonText}>
-                    {showAddPanelDays ? 'Cancel' : '+ Add Panel Days'}
+                    {panelDaysTargetId === sub._id ? 'Cancel' : '+ Add Panel Days'}
                   </Text>
                 </TouchableOpacity>
 
-                {showAddPanelDays && (
+                {panelDaysTargetId === sub._id && (
                   <View style={styles.panelDaysForm}>
                     <TextInput
                       style={styles.input}
@@ -397,22 +532,84 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                       onChangeText={setPanelDaysToAdd}
                       keyboardType="number-pad"
                     />
-                    <TouchableOpacity style={styles.saveSmallButton} onPress={handleAddPanelDaysSubmit}>
+                    <TouchableOpacity style={styles.saveSmallButton} onPress={() => handleAddPanelDaysSubmit(sub._id)}>
                       <Text style={styles.saveSmallButtonText}>Add Days</Text>
                     </TouchableOpacity>
                   </View>
                 )}
+
+                {sub.trialStatus !== 'Converted' && sub.trialStatus !== 'Lost' && (
+                  <>
+                    <Text style={styles.followUpLabel}>Follow-up Status</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.followUpChipRow}>
+                      {FOLLOW_UP_CHIPS.map((label) => (
+                        <TouchableOpacity
+                          key={label}
+                          style={[
+                            styles.followUpChip,
+                            sub.followUpStatus === label && styles.followUpChipActive,
+                          ]}
+                          onPress={() => handleSetFollowUpStatus(sub._id, label)}
+                        >
+                          <Text
+                            style={[
+                              styles.followUpChipText,
+                              sub.followUpStatus === label && styles.followUpChipTextActive,
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+
+                    {sub.priceUSD === 0 && (
+                      <TouchableOpacity
+                        style={styles.markLostButton}
+                        onPress={() => handleMarkTrialLost(sub._id)}
+                      >
+                        <Text style={styles.markLostButtonText}>Mark Trial Lost</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            ))}
+
+            {activeSubscriptions.length === 0 && latestSubscription && (
+              <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors.textMuted }]}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.cardTitle}>{latestSubscription.plan} — ${latestSubscription.priceUSD}</Text>
+                  <View style={styles.expiredBadge}>
+                    <Text style={styles.expiredBadgeText}>{latestSubscription.status.toUpperCase()}</Text>
+                  </View>
+                </View>
+                <Text style={styles.cardMeta}>Renewal Date: {new Date(latestSubscription.renewalDate).toDateString()}</Text>
+                <Text style={styles.cardMeta}>Panel Expiry: {new Date(latestSubscription.panelExpiryDate).toDateString()}</Text>
+
+                <TouchableOpacity
+                  style={styles.renewButton}
+                  onPress={() => { setRenewTargetId(latestSubscription._id); setShowAddSubForm(false); }}
+                >
+                  <Text style={styles.renewButtonText}>
+                    {latestSubscription.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
-            {!activeSubscription && (
+            {!latestSubscription && (
               <Text style={styles.emptyText}>No active subscription. Add one below.</Text>
             )}
 
             {(showRenewForm || showAddSubForm) && (
               <View style={styles.inlineForm}>
                 <Text style={styles.formTitle}>
-                  {showRenewForm ? 'Renew Subscription' : 'Add Another Subscription'}
+                  {showRenewForm
+                    ? subscriptionToRenew?.priceUSD === 0
+                      ? 'Convert to Paid'
+                      : 'Renew Subscription'
+                    : 'Add Another Subscription'}
                 </Text>
 
                 <Text style={styles.label}>Plan *</Text>
@@ -425,6 +622,48 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                     >
                       <Text style={[styles.planChipText, selectedPlan?._id === p._id && styles.planChipTextActive]}>
                         {p.name} ({p.durationValue} {p.durationType})
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.label}>Employee</Text>
+                <View style={styles.planRow}>
+                  <TouchableOpacity
+                    style={[styles.planChip, !selectedEmployee && styles.planChipActive]}
+                    onPress={() => setSelectedEmployee(null)}
+                  >
+                    <Text style={[styles.planChipText, !selectedEmployee && styles.planChipTextActive]}>None</Text>
+                  </TouchableOpacity>
+                  {employees.map((e) => (
+                    <TouchableOpacity
+                      key={e._id}
+                      style={[styles.planChip, selectedEmployee?._id === e._id && styles.planChipActive]}
+                      onPress={() => setSelectedEmployee(e)}
+                    >
+                      <Text style={[styles.planChipText, selectedEmployee?._id === e._id && styles.planChipTextActive]}>
+                        {e.employeeName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.label}>Portal URL</Text>
+                <View style={styles.planRow}>
+                  <TouchableOpacity
+                    style={[styles.planChip, !selectedPortal && styles.planChipActive]}
+                    onPress={() => setSelectedPortal(null)}
+                  >
+                    <Text style={[styles.planChipText, !selectedPortal && styles.planChipTextActive]}>None</Text>
+                  </TouchableOpacity>
+                  {portals.map((p) => (
+                    <TouchableOpacity
+                      key={p._id}
+                      style={[styles.planChip, selectedPortal?._id === p._id && styles.planChipActive]}
+                      onPress={() => setSelectedPortal(p)}
+                    >
+                      <Text style={[styles.planChipText, selectedPortal?._id === p._id && styles.planChipTextActive]}>
+                        {p.portalUrl}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -466,7 +705,11 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                   onPress={showRenewForm ? handleSaveRenew : handleSaveAddSubscription}
                 >
                   <Text style={styles.saveSmallButtonText}>
-                    {showRenewForm ? 'Confirm Renewal' : 'Save Subscription'}
+                    {showRenewForm
+                      ? subscriptionToRenew?.priceUSD === 0
+                        ? 'Confirm Conversion'
+                        : 'Confirm Renewal'
+                      : 'Save Subscription'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.cancelSmallButton} onPress={resetSubForm}>
@@ -505,28 +748,166 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                 ))}
               </>
             )}
+
+            <Text style={styles.historySectionTitle}>Devices</Text>
+            <Text style={styles.hintNote}>Tap a device to edit its MAC address or name.</Text>
+
+            {showAddDeviceForm ? (
+              <View style={styles.card}>
+                <Text style={styles.label}>Device Name (optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Device Name"
+                  placeholderTextColor={colors.textMuted}
+                  value={newDeviceName}
+                  onChangeText={setNewDeviceName}
+                />
+                <Text style={styles.label}>MAC Address *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. 00:1A:79:F2:11:4F"
+                  placeholderTextColor={colors.textMuted}
+                  value={newDeviceMac}
+                  onChangeText={setNewDeviceMac}
+                  autoCapitalize="characters"
+                />
+                <TouchableOpacity style={styles.saveSmallButton} onPress={handleAddDevice}>
+                  <Text style={styles.saveSmallButtonText}>Save Device</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cancelSmallButton}
+                  onPress={() => {
+                    setShowAddDeviceForm(false);
+                    setNewDeviceMac('');
+                    setNewDeviceName('');
+                  }}
+                >
+                  <Text style={styles.cancelSmallButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.addSmallButton} onPress={() => setShowAddDeviceForm(true)}>
+                <Text style={styles.addSmallButtonText}>+ Add Device</Text>
+              </TouchableOpacity>
+            )}
+
+            {devices.length === 0 && (
+              <Text style={styles.emptyText}>
+                No devices yet. Devices are added when you create a subscription.
+              </Text>
+            )}
+
+            {devices.map((d) => (
+              <View key={d._id} style={styles.card}>
+                {editingDeviceId === d._id ? (
+                  <View>
+                    <Text style={styles.label}>Device Name (optional)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Device Name"
+                      placeholderTextColor={colors.textMuted}
+                      value={editDeviceName}
+                      onChangeText={setEditDeviceName}
+                    />
+                    <Text style={styles.label}>MAC Address *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="MAC Address"
+                      placeholderTextColor={colors.textMuted}
+                      value={editMac}
+                      onChangeText={setEditMac}
+                      autoCapitalize="characters"
+                    />
+                    <TouchableOpacity style={styles.saveSmallButton} onPress={handleSaveEditDevice}>
+                      <Text style={styles.saveSmallButtonText}>Save Changes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.cancelSmallButton} onPress={handleCancelEditDevice}>
+                      <Text style={styles.cancelSmallButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View>
+                    <TouchableOpacity onPress={() => handleStartEditDevice(d)}>
+                      <Text style={styles.cardTitle}>{d.deviceName || d.deviceType}</Text>
+                      <Text style={styles.cardMeta}>MAC: {d.macAddress}</Text>
+                      <Text style={styles.editHint}>Tap to edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteDevice(d._id)}>
+                      <Text style={styles.deleteLink}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))}
           </View>
         )}
 
-        {activeTab === 'History' && (
+        {activeTab === 'Notes' && (
           <View>
-            {activityLog.length === 0 && (
-              <Text style={styles.emptyText}>No activity recorded yet.</Text>
-            )}
-            {activityLog.map((log) => (
-              <View key={log._id} style={styles.historyItem}>
-                <View style={styles.historyDot} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.historyAction}>{log.action}</Text>
-                  {!!log.description && (
-                    <Text style={styles.historyDesc}>{log.description}</Text>
-                  )}
-                  <Text style={styles.historyDate}>
-                    {new Date(log.createdAt).toLocaleString()} — {log.performedByName}
-                  </Text>
-                </View>
+            <View style={styles.addNoteRow}>
+              <TextInput
+                style={[styles.input, styles.noteInput]}
+                placeholder="Add a note — e.g. called, no answer"
+                placeholderTextColor={colors.textMuted}
+                value={newNoteText}
+                onChangeText={setNewNoteText}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.saveSmallButton, styles.addNoteButton]}
+                onPress={handleAddNote}
+                disabled={savingNote}
+              >
+                <Text style={styles.saveSmallButtonText}>{savingNote ? '...' : 'Add'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {notes.length === 0 && <Text style={styles.emptyText}>No notes yet.</Text>}
+            {notes.map((n) => (
+              <View key={n._id} style={styles.card}>
+                <Text style={styles.cardTitle}>{n.note}</Text>
+                <Text style={styles.cardMeta}>
+                  {new Date(n.createdAt).toLocaleString()} — {n.createdByName}
+                </Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {activeTab === 'Timeline' && (
+          <View>
+            {timelineLoading && (
+              <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: spacing.lg }} />
+            )}
+
+            {!timelineLoading && timeline.length === 0 && (
+              <Text style={styles.emptyText}>No history recorded yet.</Text>
+            )}
+
+            {!timelineLoading &&
+              timeline.map((event, index) => {
+                const meta = EVENT_META[event.type] || DEFAULT_EVENT_META;
+                const createdAt = new Date(event.createdAt);
+                return (
+                  <View key={`${event.type}-${event.createdAt}-${index}`} style={styles.timelineCard}>
+                    <View style={styles.timelineHeaderRow}>
+                      <View style={[styles.timelineIconDot, { backgroundColor: meta.bg }]}>
+                        <Text style={styles.timelineIconText}>{meta.icon}</Text>
+                      </View>
+                      <Text style={[styles.timelineTitle, { color: meta.color }]}>{event.title}</Text>
+                    </View>
+                    <Text style={styles.timelineDate}>
+                      {createdAt.toDateString()} · {createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                    {!!event.performedBy && (
+                      <Text style={styles.timelinePerformedBy}>By {event.performedBy}</Text>
+                    )}
+                    {!!event.description && (
+                      <Text style={styles.timelineDescription}>{event.description}</Text>
+                    )}
+                  </View>
+                );
+              })}
           </View>
         )}
       </ScrollView>
@@ -689,6 +1070,68 @@ const styles = StyleSheet.create({
   panelDaysForm: { marginTop: spacing.sm },
   hintNote: { ...typography.bodyMuted, marginBottom: spacing.md, fontSize: 12 },
   editHint: { color: colors.primary, fontSize: 11, marginTop: 6, fontWeight: '600' },
+  trialStatusRow: { flexDirection: 'row', marginTop: spacing.sm, gap: 6 },
+  trialStatusBadge: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginRight: 6,
+  },
+  trialStatusBadgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
+  followUpStatusBadge: {
+    backgroundColor: colors.successBg,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  followUpStatusBadgeText: { fontSize: 10, fontWeight: '700', color: colors.success },
+  followUpLabel: { ...typography.label, marginTop: spacing.md, marginBottom: spacing.xs },
+  followUpChipRow: { flexDirection: 'row' },
+  followUpChip: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  followUpChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  followUpChipText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
+  followUpChipTextActive: { color: '#ffffff' },
+  markLostButton: {
+    marginTop: spacing.sm,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerBg,
+  },
+  markLostButtonText: { color: colors.danger, fontWeight: '600', fontSize: 12 },
+  addNoteRow: { flexDirection: 'row', gap: 8, marginBottom: spacing.md, alignItems: 'flex-start' },
+  noteInput: { flex: 1, marginBottom: 0, minHeight: 44 },
+  addNoteButton: { paddingHorizontal: spacing.lg },
+  timelineCard: {
+    ...commonStyles.card,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  timelineHeaderRow: { flexDirection: 'row', alignItems: 'center' },
+  timelineIconDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  timelineIconText: { fontSize: 13 },
+  timelineTitle: { fontSize: 14, fontWeight: '700', flex: 1 },
+  timelineDate: { fontSize: 11, color: colors.textMuted, marginTop: 6, marginLeft: 36 },
+  timelinePerformedBy: { fontSize: 11, color: colors.textSecondary, marginTop: 2, marginLeft: 36 },
+  timelineDescription: { fontSize: 12, color: colors.text, marginTop: 6, marginLeft: 36 },
 });
 
 export default CustomerDetailsScreen;

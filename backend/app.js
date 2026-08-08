@@ -17,5 +17,9 @@ app.use('/api/subscriptions', require('./routes/subscription.routes'));
 app.use('/api/plans', require('./routes/plan.routes'));
 app.use('/api/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/payments', require('./routes/payment.routes'));
+app.use('/api/renewals', require('./routes/renewal.routes'));
+app.use('/api/customer-notes', require('./routes/customerNote.routes'));
+app.use('/api/employee-master', require('./routes/employeeMaster.routes'));
+app.use('/api/portals', require('./routes/portal.routes'));
 
 module.exports = app;

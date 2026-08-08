@@ -17,10 +17,15 @@ const SettingsScreen = ({ navigation, onLogout }) => {
           <Text style={styles.rowArrow}>›</Text>
         </TouchableOpacity>
 
-        <View style={styles.rowDisabled}>
-          <Text style={styles.rowLabelDisabled}>Employees</Text>
-          <Text style={styles.comingSoon}>Coming soon</Text>
-        </View>
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Employees')}>
+          <Text style={styles.rowLabel}>Employees</Text>
+          <Text style={styles.rowArrow}>›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Portals')}>
+          <Text style={styles.rowLabel}>Portal URLs</Text>
+          <Text style={styles.rowArrow}>›</Text>
+        </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>Account</Text>
 

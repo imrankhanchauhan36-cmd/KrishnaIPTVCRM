@@ -4,6 +4,7 @@ const Subscription = require('../models/Subscription');
 const ActivityLog = require('../models/ActivityLog');
 const Counter = require('../models/Counter');
 const { logActivity } = require('../services/activityLog.service');
+const { findExistingCustomer, resolveCanonicalWhatsapp } = require('../services/customer.service');
 
 const generateCustomerId = async () => {
   const counter = await Counter.findOneAndUpdate(
@@ -13,18 +14,6 @@ const generateCustomerId = async () => {
   );
   const paddedNumber = String(counter.value).padStart(4, '0');
   return `KRISH${paddedNumber}`;
-};
-
-const buildSmartSearchQuery = (searchValue) => {
-  const value = searchValue.trim();
-
-  if (value.includes('@')) {
-    return { email: value.toLowerCase() };
-  }
-  if (value.toUpperCase().startsWith('KRISH')) {
-    return { customerId: value.toUpperCase() };
-  }
-  return { whatsappNumber: value };
 };
 
 // GET all customers (excludes soft-deleted) - includes MAC address + active plan for list view
@@ -98,8 +87,7 @@ exports.checkDuplicate = async (req, res) => {
       return res.json({ exists: false });
     }
 
-    const searchQuery = buildSmartSearchQuery(query);
-    const existing = await Customer.findOne({ ...searchQuery, isDeleted: false });
+    const existing = await findExistingCustomer({ query });
 
     if (existing) {
       return res.json({ exists: true, customer: existing });
@@ -117,6 +105,8 @@ exports.createCustomer = async (req, res) => {
       customerId,
       email,
       whatsappNumber,
+      countryCode,
+      phoneNumber,
       fullName,
       status,
       macAddress,
@@ -128,16 +118,25 @@ exports.createCustomer = async (req, res) => {
       panelAddedDays,
       employeeName,
       portalUrl,
+      planId,
+      employeeId,
+      portalId,
     } = req.body;
 
-    if (!whatsappNumber || !fullName) {
+    // TEMP — remove after verification
+    console.log('[PHONE-DEBUG] Incoming request');
+    console.log('[PHONE-DEBUG] countryCode:', countryCode);
+    console.log('[PHONE-DEBUG] phoneNumber:', phoneNumber);
+
+    const canonicalWhatsapp = resolveCanonicalWhatsapp({ countryCode, phoneNumber, whatsappNumber });
+    console.log('[PHONE-DEBUG] canonical phone:', canonicalWhatsapp); // TEMP — remove after verification
+
+    if (!canonicalWhatsapp || !fullName) {
       return res.status(400).json({ message: 'Full Name and WhatsApp number are required' });
     }
 
-    const duplicateQuery = [{ whatsappNumber }];
-    if (email) duplicateQuery.push({ email: email.toLowerCase() });
-
-    const existing = await Customer.findOne({ $or: duplicateQuery, isDeleted: false });
+    const existing = await findExistingCustomer({ email, phone: canonicalWhatsapp });
+    console.log('[PHONE-DEBUG] matched customerId:', existing ? existing.customerId : null); // TEMP — remove after verification
     if (existing) {
       return res.status(409).json({
         message: 'A customer with this email or WhatsApp number already exists',
@@ -149,7 +148,7 @@ exports.createCustomer = async (req, res) => {
     const customer = new Customer({
       customerId: newCustomerId,
       email,
-      whatsappNumber,
+      whatsappNumber: canonicalWhatsapp,
       fullName,
       status: status || 'Active',
     });
@@ -170,28 +169,45 @@ exports.createCustomer = async (req, res) => {
     }
 
     let savedSubscription = null;
-    if (plan && priceUSD !== undefined && startingDate && durationType && durationValue) {
-      const { calculateRenewalDate, calculateInitialPanelExpiry } = require('../services/subscription.service');
+    if ((plan || planId) && priceUSD !== undefined && startingDate && durationType && durationValue) {
+      const {
+        calculateRenewalDate,
+        calculateInitialPanelExpiry,
+        resolvePlanReference,
+        resolveEmployeeReference,
+        resolvePortalReference,
+      } = require('../services/subscription.service');
       const renewalDate = calculateRenewalDate(startingDate, durationType, durationValue);
       const panelExpiryDate = calculateInitialPanelExpiry(startingDate, panelAddedDays);
 
+      // Additive: same authoritative-value-from-ID resolution used by
+      // subscription.controller.js, so the combined create-customer flow
+      // stores planId/employeeId/portalId too, not just free text.
+      const planRef = await resolvePlanReference(planId);
+      const employeeRef = await resolveEmployeeReference(employeeId);
+      const portalRef = await resolvePortalReference(portalId);
+      const finalPlanName = planRef ? planRef.planName : plan;
+
       const subscription = new Subscription({
         customer: savedCustomer._id,
-        plan,
+        plan: finalPlanName,
         priceUSD: Number(priceUSD),
         startingDate: new Date(startingDate),
         panelAddedDays: panelAddedDays ? Number(panelAddedDays) : 0,
         renewalDate,
         panelExpiryDate,
-        employeeName,
-        portalUrl,
+        employeeName: employeeRef ? employeeRef.employeeName : employeeName,
+        portalUrl: portalRef ? portalRef.portalUrl : portalUrl,
+        ...(planRef && { planId: planRef.planId }),
+        ...(employeeRef && { employeeId: employeeRef.employeeId }),
+        ...(portalRef && { portalId: portalRef.portalId }),
       });
       savedSubscription = await subscription.save();
 
       await logActivity({
         customer: savedCustomer._id,
         action: 'Subscription Started',
-        description: `Started "${plan}" plan ($${priceUSD}), expiry ${panelExpiryDate.toDateString()}`,
+        description: `Started "${finalPlanName}" plan ($${priceUSD}), expiry ${panelExpiryDate.toDateString()}`,
         performedByName: req.user?.fullName || 'Owner',
         performedByType: req.user?.userType || 'Admin',
       });
@@ -218,7 +234,21 @@ exports.createCustomer = async (req, res) => {
 // UPDATE customer
 exports.updateCustomer = async (req, res) => {
   try {
-    const { customerId, ...updateData } = req.body;
+    const { customerId, countryCode, phoneNumber, ...updateData } = req.body;
+    if (phoneNumber || updateData.whatsappNumber) {
+      const canonicalWhatsapp = resolveCanonicalWhatsapp({
+        countryCode,
+        phoneNumber,
+        whatsappNumber: updateData.whatsappNumber,
+      });
+      if (canonicalWhatsapp) updateData.whatsappNumber = canonicalWhatsapp;
+    }
+    // Fetch the pre-update value so a real phone-number change can be logged
+    // with old/new for the timeline — mirrors the existing oldMac pattern in
+    // device.controller.js's updateDevice. Purely an extra read; the update
+    // itself below is unchanged.
+    const previousCustomer = await Customer.findOne({ _id: req.params.id, isDeleted: false });
+
     const updatedCustomer = await Customer.findOneAndUpdate(
       { _id: req.params.id, isDeleted: false },
       updateData,
@@ -226,10 +256,17 @@ exports.updateCustomer = async (req, res) => {
     );
     if (!updatedCustomer) return res.status(404).json({ message: 'Customer not found' });
 
+    const phoneChanged =
+      updateData.whatsappNumber &&
+      previousCustomer &&
+      updateData.whatsappNumber !== previousCustomer.whatsappNumber;
+
     await logActivity({
       customer: updatedCustomer._id,
-      action: 'Customer Updated',
-      description: `${updatedCustomer.fullName}'s details were updated`,
+      action: phoneChanged ? 'Phone Number Changed' : 'Customer Updated',
+      description: phoneChanged
+        ? `Phone number changed from ${previousCustomer.whatsappNumber} to ${updateData.whatsappNumber}`
+        : `${updatedCustomer.fullName}'s details were updated`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
     });

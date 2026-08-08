@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
 import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import CustomerStack from './CustomerStack';
+import RenewalScreen from '../screens/renewal/RenewalScreen';
 import PaymentListScreen from '../screens/payment/PaymentListScreen';
 import SettingsStack from './SettingsStack';
 import { colors } from '../theme/theme';
@@ -12,6 +13,7 @@ const Tab = createBottomTabNavigator();
 const ICONS = {
   Dashboard: '🏠',
   Customers: '👥',
+  Renewals: '🔁',
   Payments: '💳',
   Settings: '⚙️',
 };
@@ -34,6 +36,7 @@ const MainTabs = ({ onLogout }) => {
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Customers" component={CustomerStack} />
+      <Tab.Screen name="Renewals" component={RenewalScreen} />
       <Tab.Screen name="Payments" component={PaymentListScreen} />
       <Tab.Screen name="Settings">
         {(props) => <SettingsStack {...props} onLogout={onLogout} />}

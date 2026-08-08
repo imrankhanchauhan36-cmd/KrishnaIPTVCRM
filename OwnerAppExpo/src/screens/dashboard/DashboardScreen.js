@@ -16,7 +16,9 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
-import { getDashboardStats, getTrialsByDate, getAllTrials } from '../../services/api';
+import { getDashboardStats, getTrialsByDate, getAllTrials, updateSubscriptionStatus } from '../../services/api';
+
+const FOLLOW_UP_CHIPS = ['Call Today', 'WhatsApp Today', 'No Response', 'Call Back Tomorrow'];
 
 const copyToClipboard = async (text, label) => {
   if (!text) return;
@@ -30,7 +32,7 @@ const getDateForOffset = (offsetDays) => {
   return d;
 };
 
-const DashboardScreen = () => {
+const DashboardScreen = ({ navigation }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -109,6 +111,49 @@ const DashboardScreen = () => {
     setRefreshing(true);
     loadStats();
     loadTrials();
+  };
+
+  const handleSetFollowUpStatus = async (subscriptionId, followUpStatus) => {
+    try {
+      await updateSubscriptionStatus(subscriptionId, { followUpStatus });
+      loadTrials();
+    } catch (error) {
+      Alert.alert('Error', 'Could not update follow-up status.');
+    }
+  };
+
+  const handleMarkLost = (subscriptionId) => {
+    Alert.alert('Mark Trial as Lost', 'This trial will be marked as lost. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Mark Lost',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await updateSubscriptionStatus(subscriptionId, { trialStatus: 'Lost', followUpStatus: 'Lost' });
+            loadTrials();
+          } catch (error) {
+            Alert.alert('Error', 'Could not update trial status.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const openTrialCustomer = (t) => {
+    if (!t.customerObjectId) return;
+    navigation.navigate('Customers', {
+      screen: 'CustomerDetails',
+      params: {
+        customer: {
+          _id: t.customerObjectId,
+          customerId: t.customerCode,
+          fullName: t.fullName,
+          whatsappNumber: t.whatsappNumber,
+          email: t.email,
+        },
+      },
+    });
   };
 
   if (loading) {
@@ -222,10 +267,27 @@ const DashboardScreen = () => {
         {!trialsLoading &&
           getFilteredTrials().map((t) => (
             <View key={t.subscriptionId} style={styles.trialCard}>
-              <View style={styles.trialCardHeader}>
-                <Text style={styles.trialName}>{t.fullName}</Text>
-                <Text style={styles.trialPlan}>{t.plan}</Text>
-              </View>
+              <TouchableOpacity onPress={() => openTrialCustomer(t)}>
+                <View style={styles.trialCardHeader}>
+                  <Text style={styles.trialName}>{t.fullName}</Text>
+                  <Text style={styles.trialPlan}>{t.plan}</Text>
+                </View>
+              </TouchableOpacity>
+
+              {(t.trialStatus && t.trialStatus !== 'Pending') || (t.followUpStatus && t.followUpStatus !== 'Pending') ? (
+                <View style={styles.trialStatusRow}>
+                  {t.trialStatus && t.trialStatus !== 'Pending' && (
+                    <View style={styles.trialStatusBadge}>
+                      <Text style={styles.trialStatusBadgeText}>{t.trialStatus}</Text>
+                    </View>
+                  )}
+                  {t.followUpStatus && t.followUpStatus !== 'Pending' && (
+                    <View style={styles.followUpStatusBadge}>
+                      <Text style={styles.followUpStatusBadgeText}>{t.followUpStatus}</Text>
+                    </View>
+                  )}
+                </View>
+              ) : null}
 
               <TouchableOpacity
                 style={styles.trialCopyRow}
@@ -258,6 +320,39 @@ const DashboardScreen = () => {
               <Text style={styles.trialExpiry}>
                 Trial ends: {new Date(t.panelExpiryDate).toDateString()}
               </Text>
+
+              {t.trialStatus !== 'Converted' && t.trialStatus !== 'Lost' && (
+                <>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.followUpChipRow}>
+                    {FOLLOW_UP_CHIPS.map((label) => (
+                      <TouchableOpacity
+                        key={label}
+                        style={[
+                          styles.followUpChip,
+                          t.followUpStatus === label && styles.followUpChipActive,
+                        ]}
+                        onPress={() => handleSetFollowUpStatus(t.subscriptionId, label)}
+                      >
+                        <Text
+                          style={[
+                            styles.followUpChipText,
+                            t.followUpStatus === label && styles.followUpChipTextActive,
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  <TouchableOpacity
+                    style={styles.markLostButton}
+                    onPress={() => handleMarkLost(t.subscriptionId)}
+                  >
+                    <Text style={styles.markLostButtonText}>Mark Lost</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           ))}
       </ScrollView>
@@ -347,6 +442,45 @@ const styles = StyleSheet.create({
   trialCopyIcon: { fontSize: 12, marginRight: 6 },
   trialCopyText: { fontSize: 12, color: colors.text },
   trialExpiry: { fontSize: 11, color: colors.danger, marginTop: 6, fontWeight: '600' },
+  trialStatusRow: { flexDirection: 'row', marginTop: 6, gap: 6 },
+  trialStatusBadge: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginRight: 6,
+  },
+  trialStatusBadgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
+  followUpStatusBadge: {
+    backgroundColor: colors.successBg,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  followUpStatusBadgeText: { fontSize: 10, fontWeight: '700', color: colors.success },
+  followUpChipRow: { flexDirection: 'row', marginTop: spacing.sm },
+  followUpChip: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  followUpChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  followUpChipText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
+  followUpChipTextActive: { color: '#ffffff' },
+  markLostButton: {
+    marginTop: spacing.sm,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerBg,
+  },
+  markLostButtonText: { color: colors.danger, fontWeight: '600', fontSize: 12 },
 });
 
 export default DashboardScreen;

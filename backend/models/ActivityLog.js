@@ -11,4 +11,9 @@ const activityLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Every consumer of this collection (getCustomerById, the timeline
+// aggregator) queries by customer and sorts by recency — index-only
+// operation, no document is read, rewritten, or migrated.
+activityLogSchema.index({ customer: 1, createdAt: -1 });
+
 module.exports = mongoose.model('ActivityLog', activityLogSchema);

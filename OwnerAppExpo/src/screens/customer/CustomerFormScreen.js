@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { getPlans, createCustomer, updateCustomer, deleteCustomer } from '../../services/api';
+import { getPlans, getActiveEmployees, getActivePortals, createCustomer, updateCustomer, deleteCustomer } from '../../services/api';
 import PhoneInput from '../../components/PhoneInput';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
 
@@ -25,8 +25,21 @@ const formatDateDisplay = (date) => {
   return `${day}${month}${year}`;
 };
 
+// Must match PhoneInput.js's COUNTRY_CODES list. The canonical stored format
+// (buildCanonicalPhone on the backend) is always "+<code><digits>" with no
+// space, so splitting on a greedy "\d{1,4}" after "+" mis-parses any code
+// shorter than 4 digits (e.g. "+19998887799" -> "+1999"/"8887799" instead of
+// "+1"/"9998887799") — match against the real known codes first instead.
+const KNOWN_COUNTRY_CODES = ['+1', '+91', '+44', '+971', '+61', '+92', '+880', '+27', '+65', '+974'];
+
 const parseWhatsapp = (fullNumber) => {
   if (!fullNumber) return { code: '+1', number: '' };
+  const knownMatch = [...KNOWN_COUNTRY_CODES]
+    .sort((a, b) => b.length - a.length)
+    .find((code) => fullNumber.startsWith(code));
+  if (knownMatch) {
+    return { code: knownMatch, number: fullNumber.slice(knownMatch.length).trim() };
+  }
   const match = fullNumber.match(/^(\+\d{1,4})\s?(.*)$/);
   if (match) return { code: match[1], number: match[2] };
   return { code: '+1', number: fullNumber };
@@ -91,34 +104,120 @@ const PlanSelector = ({ plans, selectedPlan, onChange }) => {
   );
 };
 
+const EmployeeSelector = ({ employees, selectedEmployee, onChange }) => {
+  if (employees.length === 0) {
+    return (
+      <Text style={styles.noPlansNote}>
+        No employees found. Go to Settings → Employees to add one first.
+      </Text>
+    );
+  }
+
+  return (
+    <View>
+      <Text style={styles.label}>Employee</Text>
+      <View style={styles.planRow}>
+        <TouchableOpacity
+          style={[styles.planChip, !selectedEmployee && styles.planChipActive]}
+          onPress={() => onChange(null)}
+        >
+          <Text style={[styles.planChipText, !selectedEmployee && styles.planChipTextActive]}>None</Text>
+        </TouchableOpacity>
+        {employees.map((e) => (
+          <TouchableOpacity
+            key={e._id}
+            style={[styles.planChip, selectedEmployee?._id === e._id && styles.planChipActive]}
+            onPress={() => onChange(e)}
+          >
+            <Text style={[styles.planChipText, selectedEmployee?._id === e._id && styles.planChipTextActive]}>
+              {e.employeeName}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+};
+
+const PortalSelector = ({ portals, selectedPortal, onChange }) => {
+  if (portals.length === 0) {
+    return (
+      <Text style={styles.noPlansNote}>
+        No portals found. Go to Settings → Portal URLs to add one first.
+      </Text>
+    );
+  }
+
+  return (
+    <View>
+      <Text style={styles.label}>Portal URL</Text>
+      <View style={styles.planRow}>
+        <TouchableOpacity
+          style={[styles.planChip, !selectedPortal && styles.planChipActive]}
+          onPress={() => onChange(null)}
+        >
+          <Text style={[styles.planChipText, !selectedPortal && styles.planChipTextActive]}>None</Text>
+        </TouchableOpacity>
+        {portals.map((p) => (
+          <TouchableOpacity
+            key={p._id}
+            style={[styles.planChip, selectedPortal?._id === p._id && styles.planChipActive]}
+            onPress={() => onChange(p)}
+          >
+            <Text style={[styles.planChipText, selectedPortal?._id === p._id && styles.planChipTextActive]}>
+              {p.portalUrl}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+};
+
 const CustomerFormScreen = ({ route, navigation }) => {
   const existingCustomer = route.params?.existingCustomer || null;
   const prefill = route.params?.prefill || '';
   const isEditing = !!existingCustomer;
   const prefillIsEmail = prefill && prefill.includes('@');
   const existingParsed = parseWhatsapp(existingCustomer?.whatsappNumber);
+  // The search screen composes its query as "{countryCode} {number}" (see
+  // CustomerSearchScreen.buildQuery), so it must be parsed the same way
+  // existing customers are — otherwise the whole "+91 9876543210" string
+  // lands in the number field alone and produces a doubled country code
+  // on save (e.g. "+1 +91 9876543210").
+  const prefillParsed = !isEditing && prefill && !prefillIsEmail ? parseWhatsapp(prefill) : null;
 
   const [fullName, setFullName] = useState(existingCustomer?.fullName || '');
   const [email, setEmail] = useState(
     existingCustomer?.email || (prefillIsEmail ? prefill : '') || ''
   );
-  const [countryCode, setCountryCode] = useState(existingParsed.code);
+  const [countryCode, setCountryCode] = useState(
+    isEditing ? existingParsed.code : (prefillParsed?.code || '+1')
+  );
   const [phoneNumber, setPhoneNumber] = useState(
-    existingParsed.number || (!prefillIsEmail ? prefill : '') || ''
+    isEditing ? existingParsed.number : (prefillParsed?.number || '')
   );
   const [macAddress, setMacAddress] = useState('');
   const [plans, setPlans] = useState([]);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [startingDate, setStartingDate] = useState(new Date().toISOString());
   const [panelAddedDays, setPanelAddedDays] = useState('');
-  const [employeeName, setEmployeeName] = useState('');
-  const [portalUrl, setPortalUrl] = useState('');
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [portals, setPortals] = useState([]);
+  const [selectedPortal, setSelectedPortal] = useState(null);
 
   useEffect(() => {
     if (!isEditing) {
       getPlans()
         .then(setPlans)
         .catch(() => Alert.alert('Error', 'Could not load plans.'));
+      getActiveEmployees()
+        .then(setEmployees)
+        .catch(() => {});
+      getActivePortals()
+        .then(setPortals)
+        .catch(() => {});
     }
   }, [isEditing]);
 
@@ -133,24 +232,30 @@ const CustomerFormScreen = ({ route, navigation }) => {
       return;
     }
 
-    const fullWhatsapp = `${countryCode} ${phoneNumber}`;
-
+    // The country picker is the source of truth and the backend owns the
+    // final canonical format — send its raw parts as-is and let the server
+    // combine/clean them the same way for every client (see
+    // resolveCanonicalWhatsapp / buildCanonicalPhone on the backend).
     const customerData = {
       ...(existingCustomer?._id ? { _id: existingCustomer._id } : {}),
       fullName,
       email,
-      whatsappNumber: fullWhatsapp,
+      countryCode,
+      phoneNumber,
       status: existingCustomer?.status || 'Active',
       ...(!isEditing && {
         macAddress,
         plan: selectedPlan.name,
+        planId: selectedPlan._id,
         durationType: selectedPlan.durationType,
         durationValue: selectedPlan.durationValue,
         priceUSD: selectedPlan.priceUSD,
         startingDate,
         panelAddedDays,
-        employeeName,
-        portalUrl,
+        employeeId: selectedEmployee?._id,
+        employeeName: selectedEmployee?.employeeName,
+        portalId: selectedPortal?._id,
+        portalUrl: selectedPortal?.portalUrl,
       }),
     };
 
@@ -165,7 +270,14 @@ const CustomerFormScreen = ({ route, navigation }) => {
       if (error.status === 409) {
         Alert.alert(
           'Customer Already Exists',
-          `${error.customer?.fullName || 'This customer'} (${error.customer?.customerId}) already has this email or WhatsApp number.`
+          `${error.customer?.fullName || 'This customer'} (${error.customer?.customerId}) already has this email or WhatsApp number.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Customer',
+              onPress: () => navigation.replace('CustomerDetails', { customer: error.customer }),
+            },
+          ]
         );
       } else {
         Alert.alert('Error', 'Could not save customer.');
@@ -274,24 +386,9 @@ const CustomerFormScreen = ({ route, navigation }) => {
               Renewal Date and Panel Expiry Date will be calculated automatically based on the plan and starting date.
             </Text>
 
-            <Text style={styles.label}>Employee Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Abhi"
-              placeholderTextColor={colors.textMuted}
-              value={employeeName}
-              onChangeText={setEmployeeName}
-            />
+            <EmployeeSelector employees={employees} selectedEmployee={selectedEmployee} onChange={setSelectedEmployee} />
 
-            <Text style={styles.label}>Portal URL</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. https://smart4k.me"
-              placeholderTextColor={colors.textMuted}
-              value={portalUrl}
-              onChangeText={setPortalUrl}
-              autoCapitalize="none"
-            />
+            <PortalSelector portals={portals} selectedPortal={selectedPortal} onChange={setSelectedPortal} />
           </>
         )}
 

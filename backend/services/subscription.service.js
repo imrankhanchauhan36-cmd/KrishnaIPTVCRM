@@ -27,8 +27,38 @@ const calculateRemainingDaysNeeded = (panelExpiryDate, renewalDate) => {
   return diffDays > 0 ? diffDays : 0;
 };
 
+// Resolves the authoritative plan name from Plan Master when a planId is
+// given — never trusts client-typed plan text for identity. Returns null
+// when no planId (or an unresolvable one) is provided, so callers can fall
+// back to their existing free-text behavior unchanged.
+const resolvePlanReference = async (planId) => {
+  if (!planId) return null;
+  const Plan = require('../models/Plan');
+  const planDoc = await Plan.findById(planId);
+  return planDoc ? { planId: planDoc._id, planName: planDoc.name } : null;
+};
+
+// Same pattern for the employee roster.
+const resolveEmployeeReference = async (employeeId) => {
+  if (!employeeId) return null;
+  const EmployeeMaster = require('../models/EmployeeMaster');
+  const empDoc = await EmployeeMaster.findById(employeeId);
+  return empDoc ? { employeeId: empDoc._id, employeeName: empDoc.employeeName } : null;
+};
+
+// Same pattern for the portal URL master.
+const resolvePortalReference = async (portalId) => {
+  if (!portalId) return null;
+  const Portal = require('../models/Portal');
+  const portalDoc = await Portal.findById(portalId);
+  return portalDoc ? { portalId: portalDoc._id, portalUrl: portalDoc.portalUrl } : null;
+};
+
 module.exports = {
   calculateRenewalDate,
   calculateInitialPanelExpiry,
   calculateRemainingDaysNeeded,
+  resolvePlanReference,
+  resolveEmployeeReference,
+  resolvePortalReference,
 };

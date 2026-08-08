@@ -98,6 +98,12 @@ exports.getTrialsByDate = async (req, res) => {
       return {
         subscriptionId: s._id,
         customerId: customer?._id,
+        // Additive aliases (customerId above is the Mongo _id, kept as-is
+        // for backward compatibility) — customerObjectId/customerCode make
+        // the two unambiguous for screens that need to open a customer's
+        // profile (which needs the real _id) and show their readable ID.
+        customerObjectId: customer?._id,
+        customerCode: customer?.customerId,
         fullName: customer?.fullName,
         whatsappNumber: customer?.whatsappNumber,
         email: customer?.email,
@@ -106,6 +112,8 @@ exports.getTrialsByDate = async (req, res) => {
         startingDate: s.startingDate,
         panelExpiryDate: s.panelExpiryDate,
         status: s.status,
+        trialStatus: s.trialStatus,
+        followUpStatus: s.followUpStatus,
       };
     });
 

@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 // ⚙️ SWITCH THIS to control which backend the app talks to:
 // true  = Render (production, live 24/7, works anywhere)
 // false = Local Mac backend (only works when your Mac is running the server on the same WiFi)
-const USE_PRODUCTION = true;
+const USE_PRODUCTION = false;
 
 const PRODUCTION_URL = 'https://krishna-iptv-backend.onrender.com/api';
 
@@ -45,7 +45,9 @@ export const searchCustomer = async (query) => {
 };
 
 export const createCustomer = async (data) => {
-  const response = await fetch(`${BASE_URL}/customers`, {
+  const url = `${BASE_URL}/customers`;
+  console.log('[PHONE-DEBUG] Final API URL:', url); // TEMP — remove after verification
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -73,6 +75,12 @@ export const updateCustomer = async (id, data) => {
 export const deleteCustomer = async (id) => {
   const response = await fetch(`${BASE_URL}/customers/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete customer');
+  return response.json();
+};
+
+export const getCustomerTimeline = async (id) => {
+  const response = await fetch(`${BASE_URL}/customers/${id}/timeline`);
+  if (!response.ok) throw new Error('Failed to fetch timeline');
   return response.json();
 };
 
@@ -112,14 +120,62 @@ export const createSubscription = async (data) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!response.ok) throw new Error('Failed to create subscription');
-  return response.json();
+  const result = await response.json();
+  if (!response.ok) {
+    const error = new Error(result.message || 'Failed to create subscription');
+    error.status = response.status;
+    error.subscription = result.subscription;
+    throw error;
+  }
+  return result;
 };
 
 export const deleteSubscription = async (id) => {
   const response = await fetch(`${BASE_URL}/subscriptions/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete subscription');
   return response.json();
+};
+
+export const updateSubscriptionStatus = async (id, data) => {
+  const response = await fetch(`${BASE_URL}/subscriptions/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to update status');
+  return result;
+};
+
+// ===== RENEWALS =====
+// params: { bucket } or { date } or { from, to }
+export const getRenewals = async (params = {}) => {
+  const parts = [];
+  if (params.bucket) parts.push(`bucket=${encodeURIComponent(params.bucket)}`);
+  if (params.date) parts.push(`date=${encodeURIComponent(params.date)}`);
+  if (params.from) parts.push(`from=${encodeURIComponent(params.from)}`);
+  if (params.to) parts.push(`to=${encodeURIComponent(params.to)}`);
+  const response = await fetch(`${BASE_URL}/renewals?${parts.join('&')}`);
+  if (!response.ok) throw new Error('Failed to fetch renewals');
+  return response.json();
+};
+
+// ===== CUSTOMER NOTES =====
+export const getCustomerNotes = async (customerId) => {
+  const response = await fetch(`${BASE_URL}/customer-notes/customer/${customerId}`);
+  if (!response.ok) throw new Error('Failed to fetch notes');
+  return response.json();
+};
+
+export const createCustomerNote = async (data) => {
+  const response = await fetch(`${BASE_URL}/customer-notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to add note');
+  return result;
 };
 
 // ===== PLANS =====
@@ -152,6 +208,82 @@ export const updatePlan = async (id, data) => {
 export const deletePlan = async (id) => {
   const response = await fetch(`${BASE_URL}/plans/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete plan');
+  return response.json();
+};
+
+// ===== EMPLOYEE MASTER =====
+export const getActiveEmployees = async () => {
+  const response = await fetch(`${BASE_URL}/employee-master`);
+  if (!response.ok) throw new Error('Failed to fetch employees');
+  return response.json();
+};
+
+export const getAllEmployeesForManagement = async () => {
+  const response = await fetch(`${BASE_URL}/employee-master?all=true`);
+  if (!response.ok) throw new Error('Failed to fetch employees');
+  return response.json();
+};
+
+export const createEmployee = async (data) => {
+  const response = await fetch(`${BASE_URL}/employee-master`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to create employee');
+  return result;
+};
+
+export const updateEmployee = async (id, data) => {
+  const response = await fetch(`${BASE_URL}/employee-master/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to update employee');
+  return result;
+};
+
+export const deleteEmployee = async (id) => {
+  const response = await fetch(`${BASE_URL}/employee-master/${id}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete employee');
+  return response.json();
+};
+
+// ===== PORTAL MASTER =====
+export const getActivePortals = async () => {
+  const response = await fetch(`${BASE_URL}/portals`);
+  if (!response.ok) throw new Error('Failed to fetch portals');
+  return response.json();
+};
+
+export const createPortal = async (data) => {
+  const response = await fetch(`${BASE_URL}/portals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to create portal');
+  return result;
+};
+
+export const updatePortal = async (id, data) => {
+  const response = await fetch(`${BASE_URL}/portals/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to update portal');
+  return result;
+};
+
+export const deletePortal = async (id) => {
+  const response = await fetch(`${BASE_URL}/portals/${id}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error('Failed to delete portal');
   return response.json();
 };
 

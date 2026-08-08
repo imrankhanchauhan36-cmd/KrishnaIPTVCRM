@@ -10,4 +10,8 @@ const customerNoteSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Both the customer profile note list and the timeline aggregator query by
+// customer sorted by recency — index-only, no document touched.
+customerNoteSchema.index({ customer: 1, createdAt: -1 });
+
 module.exports = mongoose.model('CustomerNote', customerNoteSchema);
