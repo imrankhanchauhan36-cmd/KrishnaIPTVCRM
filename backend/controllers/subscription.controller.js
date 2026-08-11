@@ -282,6 +282,45 @@ exports.updateSubscriptionStatus = async (req, res) => {
   }
 };
 
+// One-time repair for historical subscriptions created before subscriptions
+// tracked a device (see Subscription.device). Deliberately requires the
+// operator to pick the device explicitly — never inferred from timestamps
+// or any other heuristic, and only ever a device that already belongs to
+// this subscription's own customer.
+exports.assignDevice = async (req, res) => {
+  try {
+    const { deviceId } = req.body;
+    if (!deviceId) {
+      return res.status(400).json({ message: 'deviceId is required' });
+    }
+
+    const subscription = await Subscription.findById(req.params.id);
+    if (!subscription) return res.status(404).json({ message: 'Subscription not found' });
+
+    const Device = require('../models/Device');
+    const device = await Device.findById(deviceId);
+    if (!device) return res.status(404).json({ message: 'Device not found' });
+    if (device.customer.toString() !== subscription.customer.toString()) {
+      return res.status(400).json({ message: 'That device does not belong to this subscription\'s customer' });
+    }
+
+    subscription.device = device._id;
+    await subscription.save();
+
+    await logActivity({
+      customer: subscription.customer,
+      action: 'Device Assigned',
+      description: `Assigned device (MAC ${device.macAddress}) to "${subscription.plan}" subscription`,
+      performedByName: req.user?.fullName || 'Owner',
+      performedByType: req.user?.userType || 'Admin',
+    });
+
+    res.json(subscription);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 exports.deleteSubscription = async (req, res) => {
   try {
     const deleted = await Subscription.findByIdAndDelete(req.params.id);

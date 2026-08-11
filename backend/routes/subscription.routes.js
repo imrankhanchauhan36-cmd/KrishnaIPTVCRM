@@ -6,6 +6,7 @@ const {
   renewSubscription,
   addPanelDays,
   updateSubscriptionStatus,
+  assignDevice,
   deleteSubscription,
 } = require('../controllers/subscription.controller');
 
@@ -14,6 +15,7 @@ router.post('/', createSubscription);
 router.post('/renew', renewSubscription);
 router.post('/:id/add-panel-days', addPanelDays);
 router.patch('/:id/status', updateSubscriptionStatus);
+router.patch('/:id/device', assignDevice);
 router.delete('/:id', deleteSubscription);
 
 module.exports = router;

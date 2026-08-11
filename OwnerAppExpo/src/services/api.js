@@ -147,6 +147,19 @@ export const updateSubscriptionStatus = async (id, data) => {
   return result;
 };
 
+// One-time repair for a subscription created before device-linking existed —
+// operator picks the device explicitly, never inferred automatically.
+export const assignDeviceToSubscription = async (subscriptionId, deviceId) => {
+  const response = await fetch(`${BASE_URL}/subscriptions/${subscriptionId}/device`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to assign device');
+  return result;
+};
+
 // ===== RENEWALS =====
 // params: { bucket } or { date } or { from, to }
 export const getRenewals = async (params = {}) => {

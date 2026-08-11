@@ -26,6 +26,7 @@ import {
   getActivePortals,
   addPanelDays,
   updateSubscriptionStatus,
+  assignDeviceToSubscription,
   getCustomerNotes,
   createCustomerNote,
   getCustomerTimeline,
@@ -134,6 +135,9 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
   const [panelDaysTargetId, setPanelDaysTargetId] = useState(null);
   const [panelDaysToAdd, setPanelDaysToAdd] = useState('');
   const [panelDaysMessage, setPanelDaysMessage] = useState('');
+  // Which subscription's "Assign Device" picker is open — the one-time
+  // repair flow for subscriptions created before device-linking existed.
+  const [assignDeviceTargetId, setAssignDeviceTargetId] = useState(null);
   const [notes, setNotes] = useState([]);
   const [newNoteText, setNewNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -404,6 +408,19 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
     }
   };
 
+  // One-time repair for a subscription that predates device-linking — the
+  // operator picks the exact device once, from this customer's own devices
+  // only; nothing is ever inferred automatically.
+  const handleAssignDevice = async (subscriptionId, deviceId) => {
+    try {
+      await assignDeviceToSubscription(subscriptionId, deviceId);
+      setAssignDeviceTargetId(null);
+      loadProfile();
+    } catch (error) {
+      Alert.alert('Error', 'Could not assign device.');
+    }
+  };
+
   const handleDeleteSubscription = (id) => {
     Alert.alert('Delete Subscription', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -496,11 +513,38 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                 <Text style={styles.cardMeta}>Panel Expiry: {new Date(sub.panelExpiryDate).toDateString()}</Text>
                 {dev ? (
                   <>
-                    <Text style={styles.cardMeta}>Device: {dev.deviceName || dev.deviceType}</Text>
-                    <Text style={styles.cardMeta}>MAC: {dev.macAddress}</Text>
+                    <Text style={styles.cardMeta}>Device Name: {dev.deviceName || dev.deviceType}</Text>
+                    <Text style={styles.cardMeta}>MAC Address: {dev.macAddress}</Text>
                   </>
                 ) : (
-                  <Text style={styles.cardMeta}>No Device Linked</Text>
+                  <>
+                    <Text style={styles.cardMeta}>Device: Not Assigned</Text>
+                    <TouchableOpacity
+                      style={styles.addPanelDaysButton}
+                      onPress={() => setAssignDeviceTargetId(assignDeviceTargetId === sub._id ? null : sub._id)}
+                    >
+                      <Text style={styles.addPanelDaysButtonText}>
+                        {assignDeviceTargetId === sub._id ? 'Cancel' : 'Assign Device'}
+                      </Text>
+                    </TouchableOpacity>
+                    {assignDeviceTargetId === sub._id && (
+                      devices.length === 0 ? (
+                        <Text style={styles.hintNote}>No devices yet for this customer — add one below first.</Text>
+                      ) : (
+                        <View style={styles.planRow}>
+                          {devices.map((d) => (
+                            <TouchableOpacity
+                              key={d._id}
+                              style={styles.planChip}
+                              onPress={() => handleAssignDevice(sub._id, d._id)}
+                            >
+                              <Text style={styles.planChipText}>{d.deviceName || d.deviceType} — {d.macAddress}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )
+                    )}
+                  </>
                 )}
                 <View style={styles.panelDaysRow}>
                   <Text style={styles.cardMeta}>
@@ -610,11 +654,38 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                 <Text style={styles.cardMeta}>Panel Expiry: {new Date(latestSubscription.panelExpiryDate).toDateString()}</Text>
                 {latestSubscriptionDevice ? (
                   <>
-                    <Text style={styles.cardMeta}>Device: {latestSubscriptionDevice.deviceName || latestSubscriptionDevice.deviceType}</Text>
-                    <Text style={styles.cardMeta}>MAC: {latestSubscriptionDevice.macAddress}</Text>
+                    <Text style={styles.cardMeta}>Device Name: {latestSubscriptionDevice.deviceName || latestSubscriptionDevice.deviceType}</Text>
+                    <Text style={styles.cardMeta}>MAC Address: {latestSubscriptionDevice.macAddress}</Text>
                   </>
                 ) : (
-                  <Text style={styles.cardMeta}>No Device Linked</Text>
+                  <>
+                    <Text style={styles.cardMeta}>Device: Not Assigned</Text>
+                    <TouchableOpacity
+                      style={styles.addPanelDaysButton}
+                      onPress={() => setAssignDeviceTargetId(assignDeviceTargetId === latestSubscription._id ? null : latestSubscription._id)}
+                    >
+                      <Text style={styles.addPanelDaysButtonText}>
+                        {assignDeviceTargetId === latestSubscription._id ? 'Cancel' : 'Assign Device'}
+                      </Text>
+                    </TouchableOpacity>
+                    {assignDeviceTargetId === latestSubscription._id && (
+                      devices.length === 0 ? (
+                        <Text style={styles.hintNote}>No devices yet for this customer — add one below first.</Text>
+                      ) : (
+                        <View style={styles.planRow}>
+                          {devices.map((d) => (
+                            <TouchableOpacity
+                              key={d._id}
+                              style={styles.planChip}
+                              onPress={() => handleAssignDevice(latestSubscription._id, d._id)}
+                            >
+                              <Text style={styles.planChipText}>{d.deviceName || d.deviceType} — {d.macAddress}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )
+                    )}
+                  </>
                 )}
 
                 <TouchableOpacity
@@ -786,11 +857,38 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                       <Text style={styles.cardMeta}>Panel Expiry: {new Date(s.panelExpiryDate).toDateString()}</Text>
                       {dev ? (
                         <>
-                          <Text style={styles.cardMeta}>Device: {dev.deviceName || dev.deviceType}</Text>
-                          <Text style={styles.cardMeta}>MAC: {dev.macAddress}</Text>
+                          <Text style={styles.cardMeta}>Device Name: {dev.deviceName || dev.deviceType}</Text>
+                          <Text style={styles.cardMeta}>MAC Address: {dev.macAddress}</Text>
                         </>
                       ) : (
-                        <Text style={styles.cardMeta}>No Device Linked</Text>
+                        <>
+                          <Text style={styles.cardMeta}>Device: Not Assigned</Text>
+                          <TouchableOpacity
+                            style={styles.addPanelDaysButton}
+                            onPress={() => setAssignDeviceTargetId(assignDeviceTargetId === s._id ? null : s._id)}
+                          >
+                            <Text style={styles.addPanelDaysButtonText}>
+                              {assignDeviceTargetId === s._id ? 'Cancel' : 'Assign Device'}
+                            </Text>
+                          </TouchableOpacity>
+                          {assignDeviceTargetId === s._id && (
+                            devices.length === 0 ? (
+                              <Text style={styles.hintNote}>No devices yet for this customer — add one below first.</Text>
+                            ) : (
+                              <View style={styles.planRow}>
+                                {devices.map((d) => (
+                                  <TouchableOpacity
+                                    key={d._id}
+                                    style={styles.planChip}
+                                    onPress={() => handleAssignDevice(s._id, d._id)}
+                                  >
+                                    <Text style={styles.planChipText}>{d.deviceName || d.deviceType} — {d.macAddress}</Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            )
+                          )}
+                        </>
                       )}
                       {!alreadyFeaturedAtTop && (
                         <TouchableOpacity
