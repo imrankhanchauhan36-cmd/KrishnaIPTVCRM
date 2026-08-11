@@ -1,4 +1,5 @@
 const Device = require('../models/Device');
+const Subscription = require('../models/Subscription');
 const { logActivity } = require('../services/activityLog.service');
 
 exports.getDevicesByCustomer = async (req, res) => {
@@ -57,8 +58,16 @@ exports.updateDevice = async (req, res) => {
 
 exports.deleteDevice = async (req, res) => {
   try {
+    const device = await Device.findById(req.params.id);
+    if (!device) return res.status(404).json({ message: 'Device not found' });
+
+    // Clear the reference on every subscription pointing at this device
+    // before deleting it, so none are left with a dangling device ObjectId.
+    // Done first (and unconditionally, regardless of how many subscriptions
+    // reference it) so a mid-failure never leaves a stale reference behind.
+    await Subscription.updateMany({ device: device._id }, { $unset: { device: '' } });
+
     const deleted = await Device.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Device not found' });
 
     await logActivity({
       customer: deleted.customer,
