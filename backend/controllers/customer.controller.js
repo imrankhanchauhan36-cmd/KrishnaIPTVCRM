@@ -5,6 +5,8 @@ const ActivityLog = require('../models/ActivityLog');
 const Counter = require('../models/Counter');
 const { logActivity } = require('../services/activityLog.service');
 const { findExistingCustomer, resolveCanonicalWhatsapp } = require('../services/customer.service');
+const { safeRaiseEvent } = require('../services/notification.service');
+const { EVENT_TYPES } = require('../constants/notification.constants');
 
 const generateCustomerId = async () => {
   const counter = await Counter.findOneAndUpdate(
@@ -219,6 +221,26 @@ exports.createCustomer = async (req, res) => {
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
     });
+
+    await safeRaiseEvent({
+      eventType: EVENT_TYPES.CUSTOMER_CREATED,
+      customer: savedCustomer._id,
+      entityId: String(savedCustomer._id),
+      variables: { customerName: savedCustomer.fullName },
+    });
+    if (savedSubscription) {
+      await safeRaiseEvent({
+        eventType: EVENT_TYPES.SUBSCRIPTION_CREATED,
+        customer: savedCustomer._id,
+        subscription: savedSubscription._id,
+        entityId: String(savedSubscription._id),
+        variables: {
+          customerName: savedCustomer.fullName,
+          subscriptionPlan: savedSubscription.plan,
+          renewalDate: new Date(savedSubscription.renewalDate).toDateString(),
+        },
+      });
+    }
 
     res.status(201).json({
       customer: savedCustomer,

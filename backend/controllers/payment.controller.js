@@ -1,6 +1,8 @@
 const Payment = require('../models/Payment');
 const Customer = require('../models/Customer');
 const { logActivity } = require('../services/activityLog.service');
+const { safeRaiseEvent } = require('../services/notification.service');
+const { EVENT_TYPES } = require('../constants/notification.constants');
 
 // GET all payments (with customer info attached), newest first
 exports.getAllPayments = async (req, res) => {
@@ -69,6 +71,18 @@ exports.createPayment = async (req, res) => {
       description: `Received $${amount} via ${paymentMethod || 'Cash'}`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
+    });
+
+    const customerDoc = await Customer.findById(customer).select('fullName').lean();
+    await safeRaiseEvent({
+      eventType: EVENT_TYPES.PAYMENT_SUCCESS,
+      customer,
+      subscription: subscription || undefined,
+      entityId: String(saved._id),
+      variables: {
+        customerName: customerDoc?.fullName,
+        amount: `$${amount}`,
+      },
     });
 
     res.status(201).json(saved);

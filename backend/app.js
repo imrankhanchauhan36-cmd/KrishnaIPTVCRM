@@ -21,5 +21,7 @@ app.use('/api/renewals', require('./routes/renewal.routes'));
 app.use('/api/customer-notes', require('./routes/customerNote.routes'));
 app.use('/api/employee-master', require('./routes/employeeMaster.routes'));
 app.use('/api/portals', require('./routes/portal.routes'));
+app.use('/api/notifications', require('./routes/notification.routes'));
+app.use('/api/push-tokens', require('./routes/pushToken.routes'));
 
 module.exports = app;

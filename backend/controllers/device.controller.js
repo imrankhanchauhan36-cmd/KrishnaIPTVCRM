@@ -1,6 +1,8 @@
 const Device = require('../models/Device');
 const Subscription = require('../models/Subscription');
 const { logActivity } = require('../services/activityLog.service');
+const { safeRaiseEvent } = require('../services/notification.service');
+const { EVENT_TYPES } = require('../constants/notification.constants');
 
 exports.getDevicesByCustomer = async (req, res) => {
   try {
@@ -50,6 +52,22 @@ exports.updateDevice = async (req, res) => {
       performedByType: req.user?.userType || 'Admin',
     });
 
+    if (oldMac !== updated.macAddress) {
+      const Customer = require('../models/Customer');
+      const customerDoc = await Customer.findById(updated.customer).select('fullName').lean();
+      await safeRaiseEvent({
+        eventType: EVENT_TYPES.DEVICE_CHANGED,
+        customer: updated.customer,
+        entityId: String(updated._id),
+        extra: oldMac,
+        variables: {
+          customerName: customerDoc?.fullName,
+          deviceName: updated.deviceName || updated.deviceType,
+          macAddress: updated.macAddress,
+        },
+      });
+    }
+
     res.json(updated);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -60,6 +78,11 @@ exports.deleteDevice = async (req, res) => {
   try {
     const device = await Device.findById(req.params.id);
     if (!device) return res.status(404).json({ message: 'Device not found' });
+
+    // Captured read-only, before the clear below, purely so we know which
+    // subscriptions to notify afterward — does not change the clear/delete
+    // ordering or behavior of the underlying integrity fix in any way.
+    const affectedSubscriptions = await Subscription.find({ device: device._id }, '_id plan customer');
 
     // Clear the reference on every subscription pointing at this device
     // before deleting it, so none are left with a dangling device ObjectId.
@@ -76,6 +99,24 @@ exports.deleteDevice = async (req, res) => {
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
     });
+
+    if (affectedSubscriptions.length > 0) {
+      const Customer = require('../models/Customer');
+      const customerDoc = await Customer.findById(deleted.customer).select('fullName').lean();
+      for (const sub of affectedSubscriptions) {
+        await safeRaiseEvent({
+          eventType: EVENT_TYPES.DEVICE_UNASSIGNED,
+          customer: sub.customer,
+          subscription: sub._id,
+          entityId: String(sub._id),
+          extra: String(device._id),
+          variables: {
+            customerName: customerDoc?.fullName,
+            subscriptionPlan: sub.plan,
+          },
+        });
+      }
+    }
 
     res.json({ message: 'Device deleted successfully' });
   } catch (error) {

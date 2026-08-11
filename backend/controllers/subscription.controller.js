@@ -1,4 +1,5 @@
 const Subscription = require('../models/Subscription');
+const Customer = require('../models/Customer');
 const {
   calculateRenewalDate,
   calculateInitialPanelExpiry,
@@ -9,6 +10,8 @@ const {
   resolveOrCreateDevice,
 } = require('../services/subscription.service');
 const { logActivity } = require('../services/activityLog.service');
+const { safeRaiseEvent } = require('../services/notification.service');
+const { EVENT_TYPES } = require('../constants/notification.constants');
 
 exports.getSubscriptionsByCustomer = async (req, res) => {
   try {
@@ -93,6 +96,19 @@ exports.createSubscription = async (req, res) => {
       description: `Started "${finalPlanName}" plan ($${priceUSD}), renews on ${renewalDate.toDateString()}`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
+    });
+
+    const customerDoc = await Customer.findById(customer).select('fullName').lean();
+    await safeRaiseEvent({
+      eventType: EVENT_TYPES.SUBSCRIPTION_CREATED,
+      customer,
+      subscription: saved._id,
+      entityId: String(saved._id),
+      variables: {
+        customerName: customerDoc?.fullName,
+        subscriptionPlan: saved.plan,
+        renewalDate: new Date(saved.renewalDate).toDateString(),
+      },
     });
 
     res.status(201).json({ subscription: saved, device: savedDevice });
@@ -196,6 +212,19 @@ exports.renewSubscription = async (req, res) => {
       description: `Renewed with plan "${finalPlanName}", renews on ${renewalDate.toDateString()}`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
+    });
+
+    const customerDoc = await Customer.findById(customer).select('fullName').lean();
+    await safeRaiseEvent({
+      eventType: EVENT_TYPES.SUBSCRIPTION_RENEWED,
+      customer,
+      subscription: saved._id,
+      entityId: String(saved._id),
+      variables: {
+        customerName: customerDoc?.fullName,
+        subscriptionPlan: saved.plan,
+        renewalDate: new Date(saved.renewalDate).toDateString(),
+      },
     });
 
     res.status(201).json(saved);
@@ -313,6 +342,20 @@ exports.assignDevice = async (req, res) => {
       description: `Assigned device (MAC ${device.macAddress}) to "${subscription.plan}" subscription`,
       performedByName: req.user?.fullName || 'Owner',
       performedByType: req.user?.userType || 'Admin',
+    });
+
+    const customerDoc = await Customer.findById(subscription.customer).select('fullName').lean();
+    await safeRaiseEvent({
+      eventType: EVENT_TYPES.DEVICE_ASSIGNED,
+      customer: subscription.customer,
+      subscription: subscription._id,
+      entityId: String(subscription._id),
+      variables: {
+        customerName: customerDoc?.fullName,
+        subscriptionPlan: subscription.plan,
+        deviceName: device.deviceName || device.deviceType,
+        macAddress: device.macAddress,
+      },
     });
 
     res.json(subscription);
