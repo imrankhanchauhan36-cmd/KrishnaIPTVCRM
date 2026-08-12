@@ -28,8 +28,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title || 'Krishna IPTV', {
       body: payload.body || '',
-      icon: '/icon.svg',
-      badge: '/icon.svg',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
       data: payload.data || {},
     })
   );
