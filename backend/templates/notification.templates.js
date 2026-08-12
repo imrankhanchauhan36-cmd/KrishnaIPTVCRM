@@ -78,6 +78,34 @@ const TEMPLATES = Object.freeze({
     title: 'Payment Reminder',
     body: 'Hello {{customerName}}, this is a reminder that a payment of {{amount}} is due for your {{subscriptionPlan}} subscription.',
   },
+  [EVENT_TYPES.STAFF_TEST_NOTIFICATION]: {
+    templateId: 'staff_test_notification_v1',
+    version: 1,
+    title: 'Test Push Notification',
+    body: 'This is a test push notification from Krishna IPTV CRM. If you can see this, staff push delivery is working.',
+  },
+  // No live trigger yet (see EVENT_DEFAULT_CHANNELS comment) — templates
+  // exist now so a later admin-broadcast endpoint only needs to add the
+  // trigger itself, not design the copy. {{title}}/{{message}} are meant
+  // to be supplied per-broadcast by the admin, not fixed copy.
+  [EVENT_TYPES.ADMIN_BROADCAST]: {
+    templateId: 'admin_broadcast_v1',
+    version: 1,
+    title: '{{title}}',
+    body: '{{message}}',
+  },
+  [EVENT_TYPES.SERVICE_MAINTENANCE]: {
+    templateId: 'service_maintenance_v1',
+    version: 1,
+    title: '⚠️ Service Maintenance',
+    body: 'Our service is temporarily unavailable due to maintenance. Service will resume shortly.',
+  },
+  [EVENT_TYPES.SERVICE_RESTORED]: {
+    templateId: 'service_restored_v1',
+    version: 1,
+    title: '✅ Service Restored',
+    body: 'Our service is back up and running normally. Thank you for your patience.',
+  },
 });
 
 const VARIABLE_PATTERN = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;

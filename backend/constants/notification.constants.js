@@ -18,6 +18,19 @@ const EVENT_TYPES = Object.freeze({
   DEVICE_UNASSIGNED: 'DEVICE_UNASSIGNED',
   RENEWAL_REMINDER: 'RENEWAL_REMINDER',
   PAYMENT_REMINDER: 'PAYMENT_REMINDER',
+  // Staff/Owner App device-registration verification only — never wired
+  // into EVENT_DEFAULT_CHANNELS or any business flow in this phase. Raised
+  // exclusively by the explicit POST /api/notifications/admin/test-staff-push
+  // endpoint, always with an explicit channels:[STAFF_PUSH] override.
+  STAFF_TEST_NOTIFICATION: 'STAFF_TEST_NOTIFICATION',
+  // Customer User App phase — taxonomy only in this phase. No controller
+  // raises these yet; the actual "send to all eligible customers" admin
+  // mechanism is explicitly deferred to a later phase (per business
+  // decision). Reserved here now so that later work is additive (new
+  // trigger + template only) rather than a redesign of this taxonomy.
+  ADMIN_BROADCAST: 'ADMIN_BROADCAST', // offers / general announcements
+  SERVICE_MAINTENANCE: 'SERVICE_MAINTENANCE', // our IPTV service/server temporarily unavailable
+  SERVICE_RESTORED: 'SERVICE_RESTORED', // our IPTV service/server back up
 });
 
 // Reserved event types with no live trigger in V1 (documented, not faked):
@@ -39,10 +52,38 @@ const CHANNELS = Object.freeze({
   WHATSAPP: 'WHATSAPP',
   SMS: 'SMS',
   EMAIL: 'EMAIL',
+  // Targets StaffPushToken devices (Owner App's own Admin/Employee login),
+  // never PushToken/Customer. Kept independently gated from PUSH — see
+  // CONFIGURED_CHANNELS below.
+  STAFF_PUSH: 'STAFF_PUSH',
+  // Customer User App's browser Web Push subscriptions — stored in the
+  // SAME PushToken collection as the Owner/Staff Expo tokens (customer-
+  // scoped, platform:'web'), but dispatched via a completely separate
+  // adapter (webPush.adapter.js) since the payload shape (VAPID-signed
+  // {endpoint,keys}) is fundamentally different from an Expo push token
+  // string. Never mixed with CHANNELS.PUSH.
+  WEB_PUSH: 'WEB_PUSH',
 });
 
-// Only IN_APP has a real, non-stub adapter in V1 (see services/notificationChannels).
-const CONFIGURED_CHANNELS = Object.freeze([CHANNELS.IN_APP]);
+// IN_APP always has a real, non-stub adapter. PUSH gains a real (Expo)
+// adapter in this phase but is deliberately opt-in via an environment flag
+// rather than always-on — mirrors the REMINDER_SCHEDULER_ENABLED precedent
+// from Scheduler Safety Hardening: a new delivery capability must never
+// activate itself just because the server started. Requires a restart to
+// change, same as that flag. WHATSAPP/SMS/EMAIL remain stubs (no credentials
+// exist for those providers).
+// STAFF_PUSH has its own independent flag, STAFF_PUSH_ENABLED — deliberately
+// separate from PUSH_NOTIFICATIONS_ENABLED so the (still-experimental,
+// physical-device-test-only) staff channel can never be turned on as a side
+// effect of enabling customer push, or vice versa. Both default off.
+// WEB_PUSH has its own independent flag too, WEB_PUSH_ENABLED — same
+// reasoning as STAFF_PUSH_ENABLED: the customer-facing web channel must
+// never turn on as a side effect of enabling the Owner/Staff Expo channels.
+const configuredChannels = [CHANNELS.IN_APP];
+if (process.env.PUSH_NOTIFICATIONS_ENABLED === 'true') configuredChannels.push(CHANNELS.PUSH);
+if (process.env.STAFF_PUSH_ENABLED === 'true') configuredChannels.push(CHANNELS.STAFF_PUSH);
+if (process.env.WEB_PUSH_ENABLED === 'true') configuredChannels.push(CHANNELS.WEB_PUSH);
+const CONFIGURED_CHANNELS = Object.freeze(configuredChannels);
 
 const NOTIFICATION_STATUS = Object.freeze({
   PENDING: 'PENDING', // created, not yet dispatched (or awaiting a scheduled retry)
@@ -72,6 +113,13 @@ const EVENT_CATEGORY = Object.freeze({
   [EVENT_TYPES.SUBSCRIPTION_EXPIRED]: NOTIFICATION_CATEGORY.REMINDER,
   [EVENT_TYPES.RENEWAL_REMINDER]: NOTIFICATION_CATEGORY.REMINDER,
   [EVENT_TYPES.PAYMENT_REMINDER]: NOTIFICATION_CATEGORY.REMINDER,
+  [EVENT_TYPES.STAFF_TEST_NOTIFICATION]: NOTIFICATION_CATEGORY.TRANSACTIONAL,
+  // Offers respect the customer's promotional opt-out; maintenance/restore
+  // notices are important service information and always go out, same as
+  // every other TRANSACTIONAL event.
+  [EVENT_TYPES.ADMIN_BROADCAST]: NOTIFICATION_CATEGORY.PROMOTIONAL,
+  [EVENT_TYPES.SERVICE_MAINTENANCE]: NOTIFICATION_CATEGORY.TRANSACTIONAL,
+  [EVENT_TYPES.SERVICE_RESTORED]: NOTIFICATION_CATEGORY.TRANSACTIONAL,
 });
 
 const PRIORITY = Object.freeze({
@@ -102,6 +150,10 @@ const EVENT_PRIORITY = Object.freeze({
   [EVENT_TYPES.DEVICE_UNASSIGNED]: PRIORITY.NORMAL,
   [EVENT_TYPES.RENEWAL_REMINDER]: PRIORITY.NORMAL,
   [EVENT_TYPES.PAYMENT_REMINDER]: PRIORITY.NORMAL,
+  [EVENT_TYPES.STAFF_TEST_NOTIFICATION]: PRIORITY.LOW,
+  [EVENT_TYPES.ADMIN_BROADCAST]: PRIORITY.NORMAL,
+  [EVENT_TYPES.SERVICE_MAINTENANCE]: PRIORITY.HIGH,
+  [EVENT_TYPES.SERVICE_RESTORED]: PRIORITY.HIGH,
 });
 
 // Per-attempt outcome, recorded on NotificationDelivery — distinct from the
@@ -152,20 +204,42 @@ const REMINDER_OFFSETS_DAYS = Object.freeze([
 // whether those channels are actually configured (CONFIGURED_CHANNELS) —
 // unconfigured attempts become SKIPPED, not silently omitted, so the
 // intended architecture (multi-channel per event) is visible end-to-end
-// even before every provider is wired up.
+// even before every provider is wired up. PUSH is added to every event here
+// (Push Notification phase) — whether it actually attempts delivery still
+// depends entirely on CONFIGURED_CHANNELS (env-gated) and on the customer
+// having at least one active PushToken; adding it to this list changes no
+// existing IN_APP/WHATSAPP behavior for any event.
+//
+// STAFF_TEST_NOTIFICATION has NO entry here, deliberately — it is never
+// raised through a default-channel lookup. Its only caller (the admin
+// test-staff-push endpoint) always passes an explicit
+// channels:[CHANNELS.STAFF_PUSH] override to raiseEvent, so
+// EVENT_DEFAULT_CHANNELS[eventType] is never consulted for it. Do not add
+// an entry here until STAFF_PUSH is deliberately connected to a real
+// business event.
+//
+// WEB_PUSH is added alongside PUSH on every customer-facing event below
+// (Customer User App phase) — same reasoning as when PUSH itself was added:
+// whether it actually attempts delivery still depends entirely on
+// CONFIGURED_CHANNELS (WEB_PUSH_ENABLED) and on the customer having at
+// least one active platform:'web' PushToken. No existing IN_APP/WHATSAPP/
+// PUSH behavior changes for any event. ADMIN_BROADCAST/SERVICE_MAINTENANCE/
+// SERVICE_RESTORED intentionally have NO entry here — there is no trigger
+// for them yet (deferred to a later phase); adding an entry with nothing
+// that ever calls raiseEvent for these event types would be dead config.
 const EVENT_DEFAULT_CHANNELS = Object.freeze({
-  [EVENT_TYPES.CUSTOMER_CREATED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.SUBSCRIPTION_CREATED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.SUBSCRIPTION_RENEWED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.SUBSCRIPTION_EXPIRING]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.SUBSCRIPTION_EXPIRED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.PAYMENT_SUCCESS]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.PAYMENT_FAILED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.DEVICE_ASSIGNED]: [CHANNELS.IN_APP],
-  [EVENT_TYPES.DEVICE_CHANGED]: [CHANNELS.IN_APP],
-  [EVENT_TYPES.DEVICE_UNASSIGNED]: [CHANNELS.IN_APP],
-  [EVENT_TYPES.RENEWAL_REMINDER]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
-  [EVENT_TYPES.PAYMENT_REMINDER]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP],
+  [EVENT_TYPES.CUSTOMER_CREATED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.SUBSCRIPTION_CREATED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.SUBSCRIPTION_RENEWED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.SUBSCRIPTION_EXPIRING]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.SUBSCRIPTION_EXPIRED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.PAYMENT_SUCCESS]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.PAYMENT_FAILED]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.DEVICE_ASSIGNED]: [CHANNELS.IN_APP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.DEVICE_CHANGED]: [CHANNELS.IN_APP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.DEVICE_UNASSIGNED]: [CHANNELS.IN_APP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.RENEWAL_REMINDER]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
+  [EVENT_TYPES.PAYMENT_REMINDER]: [CHANNELS.IN_APP, CHANNELS.WHATSAPP, CHANNELS.PUSH, CHANNELS.WEB_PUSH],
 });
 
 module.exports = {

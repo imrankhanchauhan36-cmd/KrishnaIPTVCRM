@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "OwnerAppExpo",
+    "name": "Krishna IPTV Owner",
     "slug": "OwnerAppExpo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -40,7 +40,8 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -15,6 +15,11 @@ const {
   retryNotification,
   getTemplates,
   runReminderSweepNow,
+  testStaffPush,
+  getMyNotifications,
+  getMyUnreadCount,
+  markAllMineAsRead,
+  markMineAsRead,
 } = require('../controllers/notification.controller');
 
 // Admin-only — declared before the generic "/:id" route below so they can
@@ -31,6 +36,18 @@ router.get('/admin/templates', protect, requireAdmin, getTemplates);
 // REMINDER_SCHEDULER_ENABLED=true (see server.js) — deliberately explicit
 // and admin-gated rather than automatic.
 router.post('/admin/run-reminder-sweep', protect, requireAdmin, runReminderSweepNow);
+// Explicit, admin-only, real-device-test trigger for STAFF_PUSH — sends to
+// the calling admin's own registered devices only (see controller). Never
+// invoked automatically, never wired into any business flow.
+router.post('/admin/test-staff-push', protect, requireAdmin, testStaffPush);
+
+// Customer self-service (User App) — authenticated, identity from JWT only.
+// Declared before the generic "/:id" route below so "/me..." can never be
+// shadowed by it (Express would otherwise match "/me" as :id="me").
+router.get('/me', protect, getMyNotifications);
+router.get('/me/unread-count', protect, getMyUnreadCount);
+router.patch('/me/read-all', protect, markAllMineAsRead);
+router.patch('/me/:id/read', protect, markMineAsRead);
 
 // Customer-facing — unauthenticated, matching every other customer route in
 // this codebase (no customer-side login system exists yet).

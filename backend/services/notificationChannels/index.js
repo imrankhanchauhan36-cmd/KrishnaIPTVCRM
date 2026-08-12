@@ -1,6 +1,8 @@
 const { CHANNELS, CONFIGURED_CHANNELS } = require('../../constants/notification.constants');
 const inAppAdapter = require('./inApp.adapter');
 const pushAdapter = require('./push.adapter');
+const staffPushAdapter = require('./staffPush.adapter');
+const webPushAdapter = require('./webPush.adapter');
 const whatsappAdapter = require('./whatsapp.adapter');
 const smsAdapter = require('./sms.adapter');
 const emailAdapter = require('./email.adapter');
@@ -11,6 +13,8 @@ const emailAdapter = require('./email.adapter');
 const ADAPTERS = Object.freeze({
   [CHANNELS.IN_APP]: inAppAdapter,
   [CHANNELS.PUSH]: pushAdapter,
+  [CHANNELS.STAFF_PUSH]: staffPushAdapter,
+  [CHANNELS.WEB_PUSH]: webPushAdapter,
   [CHANNELS.WHATSAPP]: whatsappAdapter,
   [CHANNELS.SMS]: smsAdapter,
   [CHANNELS.EMAIL]: emailAdapter,

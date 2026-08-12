@@ -32,6 +32,7 @@ import {
   getCustomerTimeline,
 } from '../../services/api';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
+import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
 
 const TABS = ['Overview', 'Subscription', 'Notes', 'Timeline'];
 const FOLLOW_UP_CHIPS = ['Call Today', 'WhatsApp Today', 'No Response', 'Call Back Tomorrow'];
@@ -274,6 +275,16 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
   // Linked" for those, rather than guessing.
   const deviceForSub = (sub) => devices.find((d) => d._id === sub.device);
   const latestSubscriptionDevice = latestSubscription ? deviceForSub(latestSubscription) : null;
+  // Same shape as the customer list's WhatsApp data (activePlan/renewalDate/
+  // panelExpiryDate all sourced from an Active subscription only, never
+  // Expired) — keeps the two screens' message templates identical.
+  const whatsappCustomerData = {
+    fullName: customer.fullName,
+    whatsappNumber: customer.whatsappNumber,
+    activePlan: activeSubscriptions[0]?.plan || null,
+    renewalDate: activeSubscriptions[0]?.renewalDate || null,
+    panelExpiryDate: activeSubscriptions[0]?.panelExpiryDate || null,
+  };
 
   const resetSubForm = () => {
     setSelectedPlan(null);
@@ -459,6 +470,7 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
         <Text style={styles.customerId}>{customer.customerId}</Text>
         <Text style={styles.contact}>{customer.whatsappNumber}</Text>
         {!!customer.email && <Text style={styles.contact}>{customer.email}</Text>}
+        <WhatsAppQuickAction customer={whatsappCustomerData} />
       </View>
 
       <View style={styles.tabBar}>

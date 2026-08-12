@@ -1,0 +1,436 @@
+/* Design tokens ported from OwnerAppExpo/src/theme/theme.js — same brand,
+   same "clean professional business app" language, not a copy of any
+   specific Owner App screen. Values (colors/spacing/radius/typography)
+   match exactly; layout is built fresh for a consumer-facing, mobile-first
+   experience. */
+:root {
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f0f1f4;
+  --color-border: #d9dce1;
+  --color-primary: #1e4d8b;
+  --color-primary-light: #e8f0fb;
+  --color-text: #1a1d24;
+  --color-text-secondary: #5c6270;
+  --color-text-muted: #8a909c;
+  --color-success: #1a7f37;
+  --color-success-bg: #e6f4ea;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fbe9e7;
+  --color-header-bg: #1e4d8b;
+  --color-header-text: #ffffff;
+  --color-whatsapp: #1a7f37;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.screen {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Header ===== */
+.topbar {
+  background: var(--color-header-bg);
+  color: var(--color-header-text);
+  padding: 18px var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.topbar-back {
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  color: var(--color-header-text);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topbar-icon-button {
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  color: var(--color-header-text);
+  border-radius: var(--radius-lg);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  position: relative;
+}
+
+.topbar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--color-danger);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* ===== Layout ===== */
+.content {
+  flex: 1;
+  padding: var(--space-lg);
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.centered {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  background: var(--color-bg);
+}
+
+/* ===== Auth card ===== */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  width: 100%;
+  max-width: 400px;
+}
+
+.brand {
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-primary);
+  margin: 0 0 4px;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 4px;
+  color: var(--color-text);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  margin: 0 0 var(--space-xl);
+}
+
+.input {
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  font-size: 16px;
+  margin-bottom: var(--space-md);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.otp-hint {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  text-align: center;
+  margin: -8px 0 var(--space-lg);
+}
+
+.otp-hint strong {
+  font-size: 16px;
+  letter-spacing: 2px;
+}
+
+/* ===== Buttons ===== */
+.button {
+  width: 100%;
+  background: var(--color-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 13px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button-secondary {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.button-danger {
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 10px 0;
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.error-text {
+  color: var(--color-danger);
+  font-size: 13px;
+  margin: -6px 0 var(--space-md);
+}
+
+/* ===== Service / subscription card ===== */
+.service-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl) var(--space-lg);
+  margin-bottom: var(--space-md);
+  box-shadow: 0 1px 3px rgba(26, 29, 36, 0.06);
+}
+
+.service-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.plan-name {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.status-active {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.status-expired {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.days-remaining-block {
+  text-align: center;
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-surface-alt);
+  margin-bottom: var(--space-lg);
+}
+
+.days-remaining-number {
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+.days-remaining-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.field-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+
+.field-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.section-title {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  margin: var(--space-xl) 0 var(--space-sm);
+}
+
+/* ===== WhatsApp action ===== */
+.whatsapp-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  background: var(--color-whatsapp);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 15px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: var(--space-sm);
+}
+
+/* ===== Notifications ===== */
+.notification-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-sm);
+}
+
+.notification-item.unread {
+  border-left-color: var(--color-primary);
+}
+
+.notification-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 3px;
+  color: var(--color-text);
+}
+
+.notification-body {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.notification-time {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* ===== Loading / empty / error states ===== */
+.state-block {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.state-icon {
+  font-size: 32px;
+  margin-bottom: var(--space-md);
+  display: block;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--color-surface-alt);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  margin: 0 auto var(--space-md);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--color-text-muted);
+  padding: 40px 20px;
+  font-size: 14px;
+}

@@ -1,8 +1,57 @@
-import React from 'react';
-import { SafeAreaView, View, Text, StyleSheet, TouchableOpacity, Platform, StatusBar } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { SafeAreaView, View, Text, StyleSheet, TouchableOpacity, Platform, StatusBar, Alert } from 'react-native';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
+import {
+  registerForStaffPushNotifications,
+  unregisterStaffPushNotifications,
+  isStaffPushRegistered,
+} from '../../utils/staffPushNotifications';
+import { triggerTestStaffPush } from '../../services/api';
 
 const SettingsScreen = ({ navigation, onLogout }) => {
+  const [pushRegistered, setPushRegistered] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    isStaffPushRegistered().then(setPushRegistered);
+  }, []);
+
+  const handleTogglePush = useCallback(async () => {
+    setPushBusy(true);
+    try {
+      if (pushRegistered) {
+        await unregisterStaffPushNotifications();
+        setPushRegistered(false);
+      } else {
+        const saved = await registerForStaffPushNotifications();
+        if (saved) {
+          setPushRegistered(true);
+        } else {
+          Alert.alert(
+            'Could Not Enable Push',
+            'Permission was not granted, or a push token could not be obtained on this device/build.'
+          );
+        }
+      }
+    } catch (error) {
+      Alert.alert('Push Notification Error', error.message || 'Something went wrong.');
+    } finally {
+      setPushBusy(false);
+    }
+  }, [pushRegistered]);
+
+  const handleSendTestPush = useCallback(async () => {
+    setPushBusy(true);
+    try {
+      await triggerTestStaffPush();
+      Alert.alert('Test Push Sent', 'Check this device for the notification.');
+    } catch (error) {
+      Alert.alert('Test Push Failed', error.message || 'Something went wrong.');
+    } finally {
+      setPushBusy(false);
+    }
+  }, []);
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.topBar}>
@@ -26,6 +75,22 @@ const SettingsScreen = ({ navigation, onLogout }) => {
           <Text style={styles.rowLabel}>Portal URLs</Text>
           <Text style={styles.rowArrow}>›</Text>
         </TouchableOpacity>
+
+        <Text style={styles.sectionTitle}>Notifications</Text>
+
+        <TouchableOpacity style={styles.row} onPress={handleTogglePush} disabled={pushBusy}>
+          <Text style={styles.rowLabel}>
+            {pushRegistered ? 'Push Notifications: Enabled' : 'Enable Push Notifications'}
+          </Text>
+          <Text style={styles.rowArrow}>{pushBusy ? '…' : '›'}</Text>
+        </TouchableOpacity>
+
+        {pushRegistered && (
+          <TouchableOpacity style={styles.row} onPress={handleSendTestPush} disabled={pushBusy}>
+            <Text style={styles.rowLabel}>Send Test Notification</Text>
+            <Text style={styles.rowArrow}>{pushBusy ? '…' : '›'}</Text>
+          </TouchableOpacity>
+        )}
 
         <Text style={styles.sectionTitle}>Account</Text>
 

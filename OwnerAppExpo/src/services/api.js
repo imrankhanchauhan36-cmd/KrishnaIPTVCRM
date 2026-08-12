@@ -393,3 +393,89 @@ export const deletePayment = async (id) => {
   if (!response.ok) throw new Error('Failed to delete payment');
   return response.json();
 };
+
+// ===== PUSH TOKENS =====
+// These endpoints require the same staff Authorization header LoginScreen
+// already stores in AsyncStorage on login — the first real use of that
+// stored token for anything beyond auth/logout-all, not a new auth system.
+const authHeaders = async () => {
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  const token = await AsyncStorage.getItem('accessToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+export const registerPushToken = async ({ customer, token, platform, previousToken }) => {
+  const response = await fetch(`${BASE_URL}/push-tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ customer, token, platform, previousToken }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to register push token');
+  return result;
+};
+
+export const getPushTokensForCustomer = async (customerId) => {
+  const response = await fetch(`${BASE_URL}/push-tokens/customer/${customerId}`, {
+    headers: await authHeaders(),
+  });
+  if (!response.ok) throw new Error('Failed to fetch push tokens');
+  return response.json();
+};
+
+export const invalidatePushToken = async (id) => {
+  const response = await fetch(`${BASE_URL}/push-tokens/${id}/invalidate`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to invalidate push token');
+  return result;
+};
+
+// ===== STAFF PUSH TOKENS =====
+// Registers a device against the CALLING staff member's own identity — the
+// backend derives staffId/staffType from the accessToken in authHeaders(),
+// never from anything sent here. Separate collection/endpoint from the
+// customer push-tokens above; see backend/models/StaffPushToken.js.
+export const registerStaffPushToken = async ({ token, platform, previousToken }) => {
+  const response = await fetch(`${BASE_URL}/staff-push-tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ token, platform, previousToken }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to register staff push token');
+  return result;
+};
+
+export const getMyStaffPushTokens = async () => {
+  const response = await fetch(`${BASE_URL}/staff-push-tokens/me`, {
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to fetch staff push tokens');
+  return result;
+};
+
+export const invalidateStaffPushToken = async (id) => {
+  const response = await fetch(`${BASE_URL}/staff-push-tokens/${id}/invalidate`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to invalidate staff push token');
+  return result;
+};
+
+// Explicit, admin-only real-device-test trigger — sends STAFF_PUSH to the
+// calling admin's own registered devices only. Never called automatically.
+export const triggerTestStaffPush = async () => {
+  const response = await fetch(`${BASE_URL}/notifications/admin/test-staff-push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to trigger test staff push');
+  return result;
+};

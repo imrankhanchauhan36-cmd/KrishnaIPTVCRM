@@ -160,18 +160,30 @@ const attemptDelivery = async (notificationId) => {
 // A thrown error here must be caught by the caller; raiseEvent itself never
 // throws for delivery-side reasons, only for programmer errors (unknown
 // event type, missing customer).
-const raiseEvent = async ({ eventType, customer, subscription, entityId, extra, channels, variables = {}, metadata = {} }) => {
+const raiseEvent = async ({
+  eventType,
+  customer,
+  staffRecipient,
+  subscription,
+  entityId,
+  extra,
+  channels,
+  variables = {},
+  metadata = {},
+}) => {
   if (!Object.values(EVENT_TYPES).includes(eventType)) {
     throw new Error(`Unknown notification event type "${eventType}"`);
   }
-  if (!customer) {
-    throw new Error('raiseEvent requires a customer id');
+  if (!customer && !(staffRecipient && staffRecipient.staffId && staffRecipient.staffType)) {
+    throw new Error('raiseEvent requires either a customer id or a staffRecipient {staffId, staffType}');
   }
 
+  const recipientType = staffRecipient ? 'STAFF' : 'CUSTOMER';
   const category = EVENT_CATEGORY[eventType] || NOTIFICATION_CATEGORY.TRANSACTIONAL;
   const priority = EVENT_PRIORITY[eventType] || 'NORMAL';
   const resolvedChannels = channels || EVENT_DEFAULT_CHANNELS[eventType] || [];
-  const resolvedEntityId = entityId || String(customer);
+  const resolvedEntityId =
+    entityId || (customer ? String(customer) : `${staffRecipient.staffType}:${staffRecipient.staffId}`);
 
   const created = [];
 
@@ -187,7 +199,12 @@ const raiseEvent = async ({ eventType, customer, subscription, entityId, extra, 
       continue;
     }
 
-    const { allowed, reason: blockedReason } = await checkPreference(customer, channel, category);
+    // Staff recipients have no NotificationPreference document (that model
+    // is customer-scoped only, untouched by this phase) — always allowed,
+    // same as a customer with no preference doc yet (opt-out model).
+    const { allowed, reason: blockedReason } = customer
+      ? await checkPreference(customer, channel, category)
+      : { allowed: true, reason: null };
     const channelConfigured = isChannelConfigured(channel);
 
     const { templateId, title, body } = renderTemplate(eventType, variables);
@@ -209,7 +226,9 @@ const raiseEvent = async ({ eventType, customer, subscription, entityId, extra, 
         notificationId,
         eventType,
         notificationCategory: category,
-        customer,
+        recipientType,
+        customer: customer || undefined,
+        staffRecipient: staffRecipient || undefined,
         subscription: subscription || undefined,
         title,
         body,

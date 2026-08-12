@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "owner-app-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8099"],
+      "cwd": "/Users/imrankhan/Desktop/KrishnaIPTVCRM/OwnerAppExpo",
+      "port": 8099
+    },
+    {
+      "name": "owner-app-expo-go",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--port", "8098"],
+      "cwd": "/Users/imrankhan/Desktop/KrishnaIPTVCRM/OwnerAppExpo",
+      "port": 8098
+    },
+    {
+      "name": "customer-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/imrankhan/Desktop/KrishnaIPTVCRM/customer-app",
+      "port": 5174
+    }
+  ]
+}

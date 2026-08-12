@@ -13,11 +13,31 @@ const notificationSchema = new mongoose.Schema(
     eventType: { type: String, enum: Object.values(EVENT_TYPES), required: true },
     notificationCategory: { type: String, enum: Object.values(NOTIFICATION_CATEGORY), required: true },
 
-    // Recipient — a Customer today; kept as a dedicated ref (matching the
-    // Subscription/Device/Payment/ActivityLog convention) rather than a
-    // generic polymorphic reference, since every V1 event originates from a
-    // customer-owned business record.
-    customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
+    // Recipient — a Customer for every event type except
+    // STAFF_TEST_NOTIFICATION (Staff Push phase), kept as a dedicated ref
+    // (matching the Subscription/Device/Payment/ActivityLog convention)
+    // rather than a generic polymorphic reference, since every customer-
+    // facing V1 event originates from a customer-owned business record.
+    // required is conditional (not simply true) so the brand-new
+    // recipientType:'STAFF' path can coexist without ever touching this
+    // field's meaning or requiredness for any existing/customer event —
+    // every pre-existing document already has `customer` set and is
+    // completely unaffected.
+    recipientType: { type: String, enum: ['CUSTOMER', 'STAFF'], default: 'CUSTOMER' },
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+      required: function () {
+        return this.recipientType !== 'STAFF';
+      },
+    },
+    // Staff/Owner App recipient (Admin or Employee) — populated only when
+    // recipientType is 'STAFF'. Mirrors StaffPushToken's staffId/staffType
+    // discriminator; never used for, or mixed with, the customer path above.
+    staffRecipient: {
+      staffId: { type: mongoose.Schema.Types.ObjectId, refPath: 'staffRecipient.staffType' },
+      staffType: { type: String, enum: ['Admin', 'Employee'] },
+    },
     // Optional traceability back to the record that caused this event.
     subscription: { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription' },
 

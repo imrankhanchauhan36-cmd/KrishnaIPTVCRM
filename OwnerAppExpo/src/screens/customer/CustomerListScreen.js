@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import { getCustomers, addPanelDays } from '../../services/api';
 import { colors, spacing, typography } from '../../theme/theme';
+import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
 
 const copyToClipboard = async (text, label) => {
   if (!text) return;
@@ -349,6 +350,8 @@ const CustomerListScreen = ({ navigation }) => {
               <Text style={styles.copyText}>{c.whatsappNumber}</Text>
               <Text style={styles.copyHint}>Tap to copy</Text>
             </TouchableOpacity>
+
+            <WhatsAppQuickAction customer={c} />
 
             {!!c.email && (
               <TouchableOpacity

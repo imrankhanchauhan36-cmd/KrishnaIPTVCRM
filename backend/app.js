@@ -23,5 +23,7 @@ app.use('/api/employee-master', require('./routes/employeeMaster.routes'));
 app.use('/api/portals', require('./routes/portal.routes'));
 app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/push-tokens', require('./routes/pushToken.routes'));
+app.use('/api/staff-push-tokens', require('./routes/staffPushToken.routes'));
+app.use('/api/customer-auth', require('./routes/customerAuth.routes'));
 
 module.exports = app;
