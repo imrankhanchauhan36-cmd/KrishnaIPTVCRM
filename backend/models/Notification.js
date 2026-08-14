@@ -80,6 +80,8 @@ notificationSchema.index({ status: 1, scheduledAt: 1 });
 // Notification list / unread count for a given customer, newest first —
 // same shape as every other per-customer index in this codebase.
 notificationSchema.index({ customer: 1, createdAt: -1 });
+// Same shape, for the Owner App's staff-scoped list/unread-count queries.
+notificationSchema.index({ 'staffRecipient.staffId': 1, createdAt: -1 });
 notificationSchema.index({ eventType: 1 });
 notificationSchema.index({ channel: 1 });
 

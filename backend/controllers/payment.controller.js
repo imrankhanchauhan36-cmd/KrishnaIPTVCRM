@@ -4,10 +4,23 @@ const { logActivity } = require('../services/activityLog.service');
 const { safeRaiseEvent } = require('../services/notification.service');
 const { EVENT_TYPES } = require('../constants/notification.constants');
 
-// GET all payments (with customer info attached), newest first
+// GET all payments (with customer info attached), newest first.
+// Optional ?month=YYYY-MM scopes both the list and totalRevenue to that
+// calendar month — e.g. for the Dashboard's "Monthly Revenue" card, which
+// otherwise had nowhere accurate to link to (this endpoint previously only
+// ever returned an all-time total). Omitting the param preserves the
+// existing all-time behavior exactly.
 exports.getAllPayments = async (req, res) => {
   try {
-    const payments = await Payment.find().sort({ transactionDate: -1 }).lean();
+    const filter = {};
+    if (req.query.month && /^\d{4}-\d{2}$/.test(req.query.month)) {
+      const [year, month] = req.query.month.split('-').map(Number);
+      const monthStart = new Date(year, month - 1, 1);
+      const monthEnd = new Date(year, month, 1);
+      filter.transactionDate = { $gte: monthStart, $lt: monthEnd };
+    }
+
+    const payments = await Payment.find(filter).sort({ transactionDate: -1 }).lean();
     const customerIds = payments.map((p) => p.customer);
     const customers = await Customer.find({ _id: { $in: customerIds } }).lean();
 

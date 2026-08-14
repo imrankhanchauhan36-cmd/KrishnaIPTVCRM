@@ -7,6 +7,21 @@ import {
   isStaffPushRegistered,
 } from '../../utils/staffPushNotifications';
 import { triggerTestStaffPush } from '../../services/api';
+import NotificationBell from '../../components/NotificationBell';
+
+// One message per registerForStaffPushNotifications() failure reason, so
+// the operator sees why it actually failed instead of one generic message
+// covering permission refusal, missing config, and a broken build alike.
+const PUSH_FAILURE_MESSAGES = {
+  'permission-denied':
+    'Notification permission was not granted. Enable notifications for this app in your device Settings and try again.',
+  'missing-project-id': 'This app build is missing its push configuration. Contact the developer.',
+  'channel-error': 'Could not set up the notification channel on this device.',
+  'token-error':
+    'This app build could not obtain a push token — push notifications may not be fully configured for this build yet. Contact the developer.',
+  'backend-error': 'Got a device token, but registering it with the server failed. Check your connection and try again.',
+  default: 'Could not enable push notifications for an unknown reason. Please try again.',
+};
 
 const SettingsScreen = ({ navigation, onLogout }) => {
   const [pushRegistered, setPushRegistered] = useState(false);
@@ -23,14 +38,11 @@ const SettingsScreen = ({ navigation, onLogout }) => {
         await unregisterStaffPushNotifications();
         setPushRegistered(false);
       } else {
-        const saved = await registerForStaffPushNotifications();
+        const { saved, reason } = await registerForStaffPushNotifications();
         if (saved) {
           setPushRegistered(true);
         } else {
-          Alert.alert(
-            'Could Not Enable Push',
-            'Permission was not granted, or a push token could not be obtained on this device/build.'
-          );
+          Alert.alert('Could Not Enable Push', PUSH_FAILURE_MESSAGES[reason] || PUSH_FAILURE_MESSAGES.default);
         }
       }
     } catch (error) {
@@ -54,8 +66,9 @@ const SettingsScreen = ({ navigation, onLogout }) => {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, styles.topBarRow]}>
         <Text style={styles.topBarTitle}>Settings</Text>
+        <NotificationBell />
       </View>
 
       <View style={styles.container}>
@@ -125,6 +138,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + spacing.md : spacing.md,
   },
+  topBarRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   topBarTitle: { color: colors.headerText, fontSize: 18, fontWeight: '700' },
   container: { padding: spacing.lg },
   sectionTitle: {

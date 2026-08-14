@@ -18,6 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { getRenewals } from '../../services/api';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
 import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
+import NotificationBell from '../../components/NotificationBell';
 
 const copyToClipboard = async (text, label) => {
   if (!text) return;
@@ -59,7 +60,7 @@ const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
 const endOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
 const formatShort = (d) => d.toDateString();
 
-const RenewalScreen = ({ navigation }) => {
+const RenewalScreen = ({ navigation, route }) => {
   const [filterMode, setFilterMode] = useState('bucket'); // 'bucket' | 'dateFilter'
   const [activeTab, setActiveTab] = useState('expiredToday');
   const [dateFilterKey, setDateFilterKey] = useState(null);
@@ -142,6 +143,19 @@ const RenewalScreen = ({ navigation }) => {
     setDateFilterKey(key);
   };
 
+  // Entry point for Dashboard's summary cards (e.g. "Today's Renewals" ->
+  // initialDateFilter: 'today', "Next 7 Days" -> initialBucket: 'next7') —
+  // reuses the exact same selection handlers a manual tap would call, so
+  // the resulting filter state is identical either way. Only applied once
+  // on arrival; the existing filter chips still work normally afterward.
+  useEffect(() => {
+    if (route?.params?.initialDateFilter) {
+      handleSelectDateFilter(route.params.initialDateFilter);
+    } else if (route?.params?.initialBucket) {
+      handleSelectBucket(route.params.initialBucket);
+    }
+  }, [route?.params?.initialDateFilter, route?.params?.initialBucket]);
+
   const handleCustomDateChange = (event, selectedDate) => {
     setShowCustomDatePicker(Platform.OS === 'ios');
     if (selectedDate) {
@@ -203,9 +217,12 @@ const RenewalScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.topBar}>
-        <Text style={styles.topBarTitle}>Renewals</Text>
-        <Text style={styles.topBarSubtitle}>{rows.length} in this view</Text>
+      <View style={[styles.topBar, styles.topBarRow]}>
+        <View>
+          <Text style={styles.topBarTitle}>Renewals</Text>
+          <Text style={styles.topBarSubtitle}>{rows.length} in this view</Text>
+        </View>
+        <NotificationBell />
       </View>
 
       <ScrollView
@@ -420,6 +437,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + spacing.md : spacing.md,
   },
+  topBarRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   topBarTitle: { color: colors.headerText, fontSize: 18, fontWeight: '700' },
   topBarSubtitle: { color: '#c9d8ef', fontSize: 12, marginTop: 2 },
   tabRow: {

@@ -20,7 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.imrankhanchauhan38.OwnerAppExpo"
+      "package": "com.imrankhanchauhan38.OwnerAppExpo",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",

@@ -18,6 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import { getCustomers, addPanelDays } from '../../services/api';
 import { colors, spacing, typography } from '../../theme/theme';
 import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
+import NotificationBell from '../../components/NotificationBell';
 
 const copyToClipboard = async (text, label) => {
   if (!text) return;
@@ -25,7 +26,7 @@ const copyToClipboard = async (text, label) => {
   Alert.alert('Copied', `${label} copied to clipboard`);
 };
 
-const CustomerListScreen = ({ navigation }) => {
+const CustomerListScreen = ({ navigation, route }) => {
   const [customers, setCustomers] = useState([]);
   const [sortBy, setSortBy] = useState('panelExpiry');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -39,6 +40,14 @@ const CustomerListScreen = ({ navigation }) => {
   const [visibleCount, setVisibleCount] = useState(20);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Entry point for Dashboard's "Expired Customers" / "Active Customers"
+  // cards — applies the same status filter a manual chip tap would.
+  useEffect(() => {
+    if (route?.params?.initialStatusFilter) {
+      setStatusFilter(route.params.initialStatusFilter);
+    }
+  }, [route?.params?.initialStatusFilter]);
 
   const loadCustomers = useCallback(async () => {
     try {
@@ -168,9 +177,10 @@ const CustomerListScreen = ({ navigation }) => {
           <Text style={styles.topBarTitle}>Customers</Text>
           <Text style={styles.topBarSubtitle}>{customers.length} total</Text>
         </View>
-        <View style={{ flexDirection: 'row' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <NotificationBell />
           <TouchableOpacity
-            style={[styles.addButton, { marginRight: 8 }]}
+            style={[styles.addButton, { marginRight: 8, marginLeft: 8 }]}
             onPress={() => setShowFilterPanel(!showFilterPanel)}
           >
             <Text style={styles.addButtonText}>{showFilterPanel ? 'Hide' : 'Filters'}</Text>

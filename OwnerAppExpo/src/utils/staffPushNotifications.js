@@ -19,11 +19,14 @@ const STORAGE_KEY = 'staffPushToken'; // -> { tokenId, tokenValue }
 
 // Full registration flow: permission -> token -> register with backend
 // against whichever staff identity the stored accessToken belongs to.
-// Returns the registered token document, or null if registration could not
-// complete for any reason (never throws).
+// Returns { saved, reason }: saved is the registered token document (and
+// reason is null) on success; on failure saved is null and reason
+// distinguishes why (see getExpoPushToken) so the UI can show an accurate
+// message instead of one generic one for every possible cause. Never
+// throws.
 export const registerForStaffPushNotifications = async () => {
-  const tokenValue = await getExpoPushToken();
-  if (!tokenValue) return null;
+  const { token: tokenValue, reason: tokenFailureReason } = await getExpoPushToken();
+  if (!tokenValue) return { saved: null, reason: tokenFailureReason };
 
   try {
     const previousRaw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -36,10 +39,10 @@ export const registerForStaffPushNotifications = async () => {
     });
 
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ tokenId: saved._id, tokenValue }));
-    return saved;
+    return { saved, reason: null };
   } catch (error) {
     console.warn('[StaffPushNotifications] Registration with backend failed:', error.message);
-    return null;
+    return { saved: null, reason: 'backend-error' };
   }
 };
 

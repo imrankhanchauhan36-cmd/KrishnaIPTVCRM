@@ -20,6 +20,10 @@ const {
   getMyUnreadCount,
   markAllMineAsRead,
   markMineAsRead,
+  getMyStaffNotifications,
+  getMyStaffUnreadCount,
+  markAllStaffMineAsRead,
+  markStaffMineAsRead,
 } = require('../controllers/notification.controller');
 
 // Admin-only — declared before the generic "/:id" route below so they can
@@ -48,6 +52,16 @@ router.get('/me', protect, getMyNotifications);
 router.get('/me/unread-count', protect, getMyUnreadCount);
 router.patch('/me/read-all', protect, markAllMineAsRead);
 router.patch('/me/:id/read', protect, markMineAsRead);
+
+// Staff/Owner App self-service — mirrors the customer /me routes above
+// exactly, scoped by staffRecipient.staffId instead of customer. Declared
+// under "/staff/me" (not "/me") so it can never collide with the customer
+// routes' own "/me" matching, following the same StaffPushToken-vs-
+// PushToken naming split already used elsewhere in this codebase.
+router.get('/staff/me', protect, getMyStaffNotifications);
+router.get('/staff/me/unread-count', protect, getMyStaffUnreadCount);
+router.patch('/staff/me/read-all', protect, markAllStaffMineAsRead);
+router.patch('/staff/me/:id/read', protect, markStaffMineAsRead);
 
 // Customer-facing — unauthenticated, matching every other customer route in
 // this codebase (no customer-side login system exists yet).

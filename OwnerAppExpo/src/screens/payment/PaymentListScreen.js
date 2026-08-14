@@ -17,15 +17,33 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { getAllPayments, createPayment, deletePayment, getCustomers } from '../../services/api';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
 import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
+import NotificationBell from '../../components/NotificationBell';
 
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'PayPal', 'Card', 'Other'];
 
-const PaymentListScreen = () => {
+const currentMonthKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const currentMonthLabel = () =>
+  new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+const PaymentListScreen = ({ route }) => {
   const [payments, setPayments] = useState([]);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // Set from Dashboard's "Monthly Revenue" card (initialMonth: 'current');
+  // null means the original all-time view. See getAllPayments(?month=).
+  const [monthScope, setMonthScope] = useState(null);
+
+  useEffect(() => {
+    if (route?.params?.initialMonth === 'current') {
+      setMonthScope(currentMonthKey());
+    }
+  }, [route?.params?.initialMonth]);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [customers, setCustomers] = useState([]);
@@ -40,7 +58,7 @@ const PaymentListScreen = () => {
 
   const loadPayments = useCallback(async () => {
     try {
-      const data = await getAllPayments();
+      const data = await getAllPayments(monthScope ? { month: monthScope } : {});
       setPayments(data.payments);
       setTotalRevenue(data.totalRevenue);
     } catch (error) {
@@ -49,9 +67,10 @@ const PaymentListScreen = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [monthScope]);
 
   useEffect(() => {
+    setLoading(true);
     loadPayments();
   }, [loadPayments]);
 
@@ -144,14 +163,24 @@ const PaymentListScreen = () => {
       <View style={styles.topBar}>
         <View>
           <Text style={styles.topBarTitle}>Payments</Text>
-          <Text style={styles.topBarSubtitle}>Total: ${totalRevenue}</Text>
+          <Text style={styles.topBarSubtitle}>
+            {monthScope ? `${currentMonthLabel()} Revenue: $${totalRevenue}` : `Total: $${totalRevenue}`}
+          </Text>
+          {!!monthScope && (
+            <TouchableOpacity onPress={() => setMonthScope(null)}>
+              <Text style={styles.clearScopeLink}>View all-time total</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => (showAddForm ? setShowAddForm(false) : handleOpenAddForm())}
-        >
-          <Text style={styles.addButtonText}>{showAddForm ? 'Cancel' : '+ Add'}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <NotificationBell />
+          <TouchableOpacity
+            style={[styles.addButton, { marginLeft: 8 }]}
+            onPress={() => (showAddForm ? setShowAddForm(false) : handleOpenAddForm())}
+          >
+            <Text style={styles.addButtonText}>{showAddForm ? 'Cancel' : '+ Add'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -318,6 +347,7 @@ const styles = StyleSheet.create({
   },
   topBarTitle: { color: colors.headerText, fontSize: 18, fontWeight: '700' },
   topBarSubtitle: { color: '#c9d8ef', fontSize: 12, marginTop: 2 },
+  clearScopeLink: { color: '#c9d8ef', fontSize: 11, marginTop: 2, textDecorationLine: 'underline' },
   addButton: {
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 6,

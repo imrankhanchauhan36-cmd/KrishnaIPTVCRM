@@ -18,6 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
 import { getDashboardStats, getTrialsByDate, getAllTrials, updateSubscriptionStatus } from '../../services/api';
 import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
+import NotificationBell from '../../components/NotificationBell';
 
 const FOLLOW_UP_CHIPS = ['Call Today', 'WhatsApp Today', 'No Response', 'Call Back Tomorrow'];
 
@@ -165,21 +166,75 @@ const DashboardScreen = ({ navigation }) => {
     );
   }
 
+  // Each card navigates into the existing screen that already owns this
+  // data, pre-selecting the matching filter there — no new screens, no
+  // duplicated business logic. "Pending Payments" is the one exception:
+  // the backend has no real query behind that stat (dashboard.controller.js
+  // hardcodes pendingPayments: 0 — there's no "amount due" concept in this
+  // CRM, payments are only ever recorded after being received), so it
+  // opens Payments unfiltered rather than pretending a filter exists.
   const dashboardCards = [
-    { id: '1', label: "Today's Renewals", value: stats?.todaysRenewals ?? 0, color: colors.primary },
-    { id: '2', label: "Tomorrow's Renewals", value: stats?.tomorrowsRenewals ?? 0, color: '#0ea5e9' },
-    { id: '3', label: 'Next 7 Days', value: stats?.next7DaysRenewals ?? 0, color: '#0d9488' },
-    { id: '4', label: 'Expired Customers', value: stats?.expiredCustomers ?? 0, color: colors.danger },
-    { id: '5', label: 'Active Customers', value: stats?.activeCustomers ?? 0, color: colors.success },
-    { id: '6', label: 'Monthly Revenue', value: `$${stats?.monthlyRevenue ?? 0}`, color: '#b45309' },
-    { id: '7', label: 'Pending Payments', value: stats?.pendingPayments ?? 0, color: '#be123c' },
+    {
+      id: '1',
+      label: "Today's Renewals",
+      value: stats?.todaysRenewals ?? 0,
+      color: colors.primary,
+      onPress: () => navigation.navigate('Renewals', { initialDateFilter: 'today' }),
+    },
+    {
+      id: '2',
+      label: "Tomorrow's Renewals",
+      value: stats?.tomorrowsRenewals ?? 0,
+      color: '#0ea5e9',
+      onPress: () => navigation.navigate('Renewals', { initialDateFilter: 'tomorrow' }),
+    },
+    {
+      id: '3',
+      label: 'Next 7 Days',
+      value: stats?.next7DaysRenewals ?? 0,
+      color: '#0d9488',
+      onPress: () => navigation.navigate('Renewals', { initialBucket: 'next7' }),
+    },
+    {
+      id: '4',
+      label: 'Expired Customers',
+      value: stats?.expiredCustomers ?? 0,
+      color: colors.danger,
+      onPress: () =>
+        navigation.navigate('Customers', { screen: 'CustomerList', params: { initialStatusFilter: 'Expired' } }),
+    },
+    {
+      id: '5',
+      label: 'Active Customers',
+      value: stats?.activeCustomers ?? 0,
+      color: colors.success,
+      onPress: () =>
+        navigation.navigate('Customers', { screen: 'CustomerList', params: { initialStatusFilter: 'Active' } }),
+    },
+    {
+      id: '6',
+      label: 'Monthly Revenue',
+      value: `$${stats?.monthlyRevenue ?? 0}`,
+      color: '#b45309',
+      onPress: () => navigation.navigate('Payments', { initialMonth: 'current' }),
+    },
+    {
+      id: '7',
+      label: 'Pending Payments',
+      value: stats?.pendingPayments ?? 0,
+      color: '#be123c',
+      onPress: () => navigation.navigate('Payments', {}),
+    },
   ];
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.topBar}>
-        <Text style={styles.topBarTitle}>Dashboard</Text>
-        <Text style={styles.topBarSubtitle}>Krishna IPTV Owner Overview</Text>
+      <View style={[styles.topBar, styles.topBarRow]}>
+        <View>
+          <Text style={styles.topBarTitle}>Dashboard</Text>
+          <Text style={styles.topBarSubtitle}>Krishna IPTV Owner Overview</Text>
+        </View>
+        <NotificationBell />
       </View>
 
       <ScrollView
@@ -190,13 +245,17 @@ const DashboardScreen = ({ navigation }) => {
       >
         <View style={styles.grid}>
           {dashboardCards.map((card) => (
-            <View
+            <TouchableOpacity
               key={card.id}
               style={[styles.card, { borderLeftColor: card.color }]}
+              onPress={card.onPress}
+              activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityLabel={card.label}
             >
               <Text style={[styles.cardValue, { color: card.color }]}>{card.value}</Text>
               <Text style={styles.cardLabel}>{card.label}</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -379,6 +438,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + spacing.md : spacing.md,
   },
+  topBarRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   topBarTitle: { color: colors.headerText, fontSize: 18, fontWeight: '700' },
   topBarSubtitle: { color: '#c9d8ef', fontSize: 12, marginTop: 2 },
   container: { padding: spacing.lg, paddingBottom: 40 },

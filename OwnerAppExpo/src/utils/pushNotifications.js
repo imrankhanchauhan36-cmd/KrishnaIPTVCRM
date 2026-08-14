@@ -41,29 +41,46 @@ export const requestPushPermission = async () => {
 };
 
 // Obtains a real Expo push token using this project's existing EAS project
-// ID (already configured in app.json — nothing invented here). Returns
-// null (never throws) if permission isn't granted or the platform/
-// environment can't produce one (e.g. a simulator).
+// ID (already configured in app.json — nothing invented here). Never
+// throws. Returns { token, reason }: token is null on any failure, and
+// reason distinguishes WHY so callers can show an accurate message instead
+// of one generic "permission denied" for every possible cause — permission
+// refusal, missing projectId, and getExpoPushTokenAsync() itself failing
+// (e.g. native push credentials not configured for this build) are very
+// different problems with very different fixes.
 export const getExpoPushToken = async () => {
-  try {
-    const projectId = getProjectId();
-    if (!projectId) return null;
+  const projectId = getProjectId();
+  if (!projectId) {
+    console.warn('[PushNotifications] No EAS projectId resolved — check app.json extra.eas.projectId.');
+    return { token: null, reason: 'missing-project-id' };
+  }
 
-    if (Platform.OS === 'android') {
+  if (Platform.OS === 'android') {
+    try {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'default',
         importance: Notifications.AndroidImportance.DEFAULT,
       });
+    } catch (error) {
+      console.warn('[PushNotifications] Could not create Android notification channel:', error.message);
+      return { token: null, reason: 'channel-error' };
     }
+  }
 
-    const { granted } = await requestPushPermission();
-    if (!granted) return null;
+  const { granted } = await requestPushPermission();
+  if (!granted) return { token: null, reason: 'permission-denied' };
 
+  try {
     const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
-    return data || null;
+    return { token: data || null, reason: data ? null : 'token-error' };
   } catch (error) {
+    // This is the failure mode when native push isn't actually configured
+    // for this build (e.g. no FCM credentials) — permission was granted,
+    // the channel exists, but the OS/Expo can't mint a token. Logged in
+    // full here since this exact message is what tells us which of those
+    // it is; the caller only gets the coarse `reason`.
     console.warn('[PushNotifications] Could not obtain a push token:', error.message);
-    return null;
+    return { token: null, reason: 'token-error' };
   }
 };
 
@@ -76,7 +93,7 @@ export const getExpoPushToken = async () => {
 export const registerForPushNotifications = async (customerId) => {
   if (!customerId) return null;
 
-  const tokenValue = await getExpoPushToken();
+  const { token: tokenValue } = await getExpoPushToken();
   if (!tokenValue) return null;
 
   try {

@@ -1,35 +1,14 @@
-import { Tabs } from 'expo-router';
+import { Stack } from 'expo-router';
 import React from 'react';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
+// This group previously rendered its own expo-router Tabs bar (Home /
+// Explore) wrapping the "index" route, which itself renders MainTabs (the
+// app's real Dashboard/Customers/Renewals/Payments/Settings navigation) —
+// producing two visible tab bars stacked on top of each other. "Explore"
+// was unused default-template boilerplate, never linked to any CRM
+// feature. A plain headerless Stack removes the outer bar entirely while
+// keeping the existing route file/path (app/(tabs)/index.tsx) untouched,
+// so MainTabs remains the single, correct navigation.
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
-  return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
-  );
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

@@ -372,8 +372,12 @@ export const getAllTrials = async () => {
 };
 
 // ===== PAYMENTS =====
-export const getAllPayments = async () => {
-  const response = await fetch(`${BASE_URL}/payments`);
+// params.month: optional 'YYYY-MM' to scope both the list and totalRevenue
+// to that calendar month; omitted entirely preserves the original
+// all-time-totals behavior.
+export const getAllPayments = async (params = {}) => {
+  const query = params.month ? `?month=${encodeURIComponent(params.month)}` : '';
+  const response = await fetch(`${BASE_URL}/payments${query}`);
   if (!response.ok) throw new Error('Failed to fetch payments');
   return response.json();
 };
@@ -477,5 +481,44 @@ export const triggerTestStaffPush = async () => {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to trigger test staff push');
+  return result;
+};
+
+// ===== STAFF/OWNER NOTIFICATION CENTER =====
+export const getMyStaffNotifications = async (page = 1) => {
+  const response = await fetch(`${BASE_URL}/notifications/staff/me?page=${page}`, {
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to fetch notifications');
+  return result;
+};
+
+export const getMyStaffUnreadCount = async () => {
+  const response = await fetch(`${BASE_URL}/notifications/staff/me/unread-count`, {
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to fetch unread count');
+  return result;
+};
+
+export const markAllStaffNotificationsRead = async () => {
+  const response = await fetch(`${BASE_URL}/notifications/staff/me/read-all`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to mark notifications read');
+  return result;
+};
+
+export const markStaffNotificationRead = async (id) => {
+  const response = await fetch(`${BASE_URL}/notifications/staff/me/${id}/read`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to mark notification read');
   return result;
 };

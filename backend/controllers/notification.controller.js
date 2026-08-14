@@ -225,6 +225,91 @@ exports.markMineAsRead = async (req, res) => {
   }
 };
 
+// ---- Staff/Owner self-service (Owner App) — identical shape to the
+// customer /me endpoints above, scoped by staffRecipient.staffId instead
+// of customer. Both come from the verified JWT (req.user.id), never from
+// the request, so a staff member can only ever read their own
+// notifications — same isolation guarantee the customer path already has. ----
+
+const requireStaffUser = (req, res) => {
+  if (req.user.userType === 'Customer') {
+    res.status(403).json({ message: 'This endpoint is for staff accounts only' });
+    return false;
+  }
+  return true;
+};
+
+// GET /api/notifications/staff/me?page=&limit=&status=&channel=
+exports.getMyStaffNotifications = async (req, res) => {
+  try {
+    if (!requireStaffUser(req, res)) return;
+    const { page, limit, skip } = parsePagination(req.query);
+    const filter = { 'staffRecipient.staffId': req.user.id };
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.channel) filter.channel = req.query.channel;
+
+    const [notifications, total] = await Promise.all([
+      Notification.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Notification.countDocuments(filter),
+    ]);
+
+    res.json({ notifications, total, page, limit, totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/notifications/staff/me/unread-count
+exports.getMyStaffUnreadCount = async (req, res) => {
+  try {
+    if (!requireStaffUser(req, res)) return;
+    const count = await Notification.countDocuments({
+      'staffRecipient.staffId': req.user.id,
+      status: { $in: [NOTIFICATION_STATUS.PENDING, NOTIFICATION_STATUS.SENT, NOTIFICATION_STATUS.DELIVERED] },
+      readAt: null,
+    });
+    res.json({ unreadCount: count });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/notifications/staff/me/read-all
+exports.markAllStaffMineAsRead = async (req, res) => {
+  try {
+    if (!requireStaffUser(req, res)) return;
+    const now = new Date();
+    const result = await Notification.updateMany(
+      { 'staffRecipient.staffId': req.user.id, readAt: null, status: { $ne: NOTIFICATION_STATUS.FAILED } },
+      { $set: { readAt: now, status: NOTIFICATION_STATUS.READ } }
+    );
+    res.json({ matched: result.matchedCount, updated: result.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/notifications/staff/me/:id/read
+exports.markStaffMineAsRead = async (req, res) => {
+  try {
+    if (!requireStaffUser(req, res)) return;
+    const notification = await Notification.findOne({ _id: req.params.id, 'staffRecipient.staffId': req.user.id });
+    if (!notification) return res.status(404).json({ message: 'Notification not found' });
+
+    if (!notification.readAt) {
+      notification.readAt = new Date();
+      if (notification.status !== NOTIFICATION_STATUS.FAILED) {
+        notification.status = NOTIFICATION_STATUS.READ;
+      }
+      await notification.save();
+    }
+
+    res.json(notification);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 // ---- Admin-only (protect + requireAdmin applied in routes) ----
 
 // GET /api/notifications/admin/delivery-logs?notificationId=&status=&channel=&page=&limit=
