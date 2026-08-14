@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getRenewals } from '../../services/api';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
+import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
 
 const copyToClipboard = async (text, label) => {
   if (!text) return;
@@ -379,6 +380,16 @@ const RenewalScreen = ({ navigation }) => {
                   <Text style={styles.actionButtonLabel}>{row.whatsappNumber}</Text>
                   <Text style={styles.actionButtonHint}>Copy</Text>
                 </TouchableOpacity>
+
+                <WhatsAppQuickAction
+                  customer={{
+                    fullName: row.fullName,
+                    whatsappNumber: row.whatsappNumber,
+                    activePlan: row.plan,
+                    renewalDate: row.renewalDate,
+                    panelExpiryDate: row.panelExpiryDate,
+                  }}
+                />
 
                 {!!row.macAddress && (
                   <TouchableOpacity

@@ -16,6 +16,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getAllPayments, createPayment, deletePayment, getCustomers } from '../../services/api';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
+import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
 
 const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'PayPal', 'Card', 'Other'];
 
@@ -281,6 +282,7 @@ const PaymentListScreen = () => {
             </View>
             <Text style={styles.metaText}>{p.paymentMethod} • {new Date(p.transactionDate).toDateString()}</Text>
             {!!p.notes && <Text style={styles.notesText}>{p.notes}</Text>}
+            <WhatsAppQuickAction customer={{ fullName: p.customerName, whatsappNumber: p.whatsappNumber }} />
             <TouchableOpacity onPress={() => handleDeletePayment(p._id)}>
               <Text style={styles.deleteLink}>Delete</Text>
             </TouchableOpacity>

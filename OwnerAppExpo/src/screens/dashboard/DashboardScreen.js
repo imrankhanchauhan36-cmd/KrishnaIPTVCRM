@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
 import { getDashboardStats, getTrialsByDate, getAllTrials, updateSubscriptionStatus } from '../../services/api';
+import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
 
 const FOLLOW_UP_CHIPS = ['Call Today', 'WhatsApp Today', 'No Response', 'Call Back Tomorrow'];
 
@@ -296,6 +297,15 @@ const DashboardScreen = ({ navigation }) => {
                 <Text style={styles.trialCopyIcon}>📞</Text>
                 <Text style={styles.trialCopyText}>{t.whatsappNumber}</Text>
               </TouchableOpacity>
+
+              <WhatsAppQuickAction
+                customer={{
+                  fullName: t.fullName,
+                  whatsappNumber: t.whatsappNumber,
+                  activePlan: t.plan,
+                  panelExpiryDate: t.panelExpiryDate,
+                }}
+              />
 
               {!!t.email && (
                 <TouchableOpacity

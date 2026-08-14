@@ -9,6 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { colors, spacing, typography, commonStyles } from '../../theme/theme';
+import WhatsAppQuickAction from '../../components/WhatsAppQuickAction';
 
 const CustomerFoundScreen = ({ route, navigation }) => {
   const { customer } = route.params;
@@ -29,6 +30,17 @@ const CustomerFoundScreen = ({ route, navigation }) => {
           <View style={styles.row}>
             <Text style={styles.label}>Phone</Text>
             <Text style={styles.value}>{customer.whatsappNumber}</Text>
+          </View>
+          <View style={[styles.row, { justifyContent: 'flex-start' }]}>
+            <WhatsAppQuickAction
+              customer={{
+                fullName: customer.fullName,
+                whatsappNumber: customer.whatsappNumber,
+                activePlan: customer.activePlan,
+                renewalDate: customer.renewalDate,
+                panelExpiryDate: customer.panelExpiryDate,
+              }}
+            />
           </View>
           {!!customer.email && (
             <View style={styles.row}>
