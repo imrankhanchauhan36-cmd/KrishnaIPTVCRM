@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 // ⚙️ SWITCH THIS to control which backend the app talks to:
 // true  = Render (production, live 24/7, works anywhere)
 // false = Local Mac backend (only works when your Mac is running the server on the same WiFi)
-const USE_PRODUCTION = false;
+const USE_PRODUCTION = true;
 
 const PRODUCTION_URL = 'https://krishna-iptv-backend.onrender.com/api';
 
