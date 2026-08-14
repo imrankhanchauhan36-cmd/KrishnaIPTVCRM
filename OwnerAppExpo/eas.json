@@ -7,18 +7,25 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "development",
+      "android": {
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       },
       "channel": "production"
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "android": {
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
+      }
     }
   },
   "submit": {
