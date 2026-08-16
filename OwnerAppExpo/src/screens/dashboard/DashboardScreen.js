@@ -225,6 +225,16 @@ const DashboardScreen = ({ navigation }) => {
       color: '#be123c',
       onPress: () => navigation.navigate('Payments', {}),
     },
+    {
+      id: '8',
+      label: 'App Installed',
+      // No "installed" filter exists on the customer list (same reasoning
+      // as "Pending Payments" above) — shown as a count only.
+      value: `${stats?.pwaInstalledCustomers ?? 0} / ${stats?.totalCustomers ?? 0}`,
+      color: '#7c3aed',
+      onPress: () =>
+        navigation.navigate('Customers', { screen: 'CustomerList', params: {} }),
+    },
   ];
 
   return (

@@ -130,6 +130,17 @@ export const createSubscription = async (data) => {
   return result;
 };
 
+export const updateSubscription = async (id, data) => {
+  const response = await fetch(`${BASE_URL}/subscriptions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || 'Failed to update subscription');
+  return result;
+};
+
 export const deleteSubscription = async (id) => {
   const response = await fetch(`${BASE_URL}/subscriptions/${id}`, { method: 'DELETE' });
   if (!response.ok) throw new Error('Failed to delete subscription');
@@ -402,16 +413,66 @@ export const deletePayment = async (id) => {
 // These endpoints require the same staff Authorization header LoginScreen
 // already stores in AsyncStorage on login — the first real use of that
 // stored token for anything beyond auth/logout-all, not a new auth system.
+//
+// The access token is only valid for 15 minutes (see backend
+// services/auth.service.js ACCESS_TOKEN_EXPIRY), but nothing was ever
+// calling POST /auth/refresh with the also-stored refresh token — so any
+// screen using this header (Notification Center, push-token screens) would
+// start showing the raw "Not authorized, token is invalid or expired" error
+// the moment a session ran past 15 minutes. authenticatedFetch below fixes
+// this the standard way: on a 401, silently refresh once and retry: the
+// caller never sees an expired-token error unless the refresh token itself
+// is also dead (7 days — see REFRESH_TOKEN_EXPIRY_DAYS), which genuinely
+// does require logging in again.
+const refreshAccessToken = async () => {
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  const refreshToken = await AsyncStorage.getItem('refreshToken');
+  if (!refreshToken) return null;
+  try {
+    const response = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    await AsyncStorage.setItem('accessToken', result.accessToken);
+    return result.accessToken;
+  } catch {
+    return null;
+  }
+};
+
 const authHeaders = async () => {
   const AsyncStorage = require('@react-native-async-storage/async-storage').default;
   const token = await AsyncStorage.getItem('accessToken');
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+// Drop-in replacement for `fetch(url, options)` for every staff-authenticated
+// endpoint below — attaches the current access token, and transparently
+// refreshes + retries once on a 401 instead of surfacing it to the caller.
+const authenticatedFetch = async (url, options = {}) => {
+  const headers = { ...(options.headers || {}), ...(await authHeaders()) };
+  let response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      response = await fetch(url, {
+        ...options,
+        headers: { ...(options.headers || {}), Authorization: `Bearer ${newToken}` },
+      });
+    }
+  }
+
+  return response;
+};
+
 export const registerPushToken = async ({ customer, token, platform, previousToken }) => {
-  const response = await fetch(`${BASE_URL}/push-tokens`, {
+  const response = await authenticatedFetch(`${BASE_URL}/push-tokens`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ customer, token, platform, previousToken }),
   });
   const result = await response.json();
@@ -420,18 +481,13 @@ export const registerPushToken = async ({ customer, token, platform, previousTok
 };
 
 export const getPushTokensForCustomer = async (customerId) => {
-  const response = await fetch(`${BASE_URL}/push-tokens/customer/${customerId}`, {
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/push-tokens/customer/${customerId}`);
   if (!response.ok) throw new Error('Failed to fetch push tokens');
   return response.json();
 };
 
 export const invalidatePushToken = async (id) => {
-  const response = await fetch(`${BASE_URL}/push-tokens/${id}/invalidate`, {
-    method: 'PATCH',
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/push-tokens/${id}/invalidate`, { method: 'PATCH' });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to invalidate push token');
   return result;
@@ -439,13 +495,13 @@ export const invalidatePushToken = async (id) => {
 
 // ===== STAFF PUSH TOKENS =====
 // Registers a device against the CALLING staff member's own identity — the
-// backend derives staffId/staffType from the accessToken in authHeaders(),
-// never from anything sent here. Separate collection/endpoint from the
-// customer push-tokens above; see backend/models/StaffPushToken.js.
+// backend derives staffId/staffType from the accessToken authenticatedFetch
+// attaches, never from anything sent here. Separate collection/endpoint
+// from the customer push-tokens above; see backend/models/StaffPushToken.js.
 export const registerStaffPushToken = async ({ token, platform, previousToken }) => {
-  const response = await fetch(`${BASE_URL}/staff-push-tokens`, {
+  const response = await authenticatedFetch(`${BASE_URL}/staff-push-tokens`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, platform, previousToken }),
   });
   const result = await response.json();
@@ -454,19 +510,14 @@ export const registerStaffPushToken = async ({ token, platform, previousToken })
 };
 
 export const getMyStaffPushTokens = async () => {
-  const response = await fetch(`${BASE_URL}/staff-push-tokens/me`, {
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/staff-push-tokens/me`);
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to fetch staff push tokens');
   return result;
 };
 
 export const invalidateStaffPushToken = async (id) => {
-  const response = await fetch(`${BASE_URL}/staff-push-tokens/${id}/invalidate`, {
-    method: 'PATCH',
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/staff-push-tokens/${id}/invalidate`, { method: 'PATCH' });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to invalidate staff push token');
   return result;
@@ -475,9 +526,9 @@ export const invalidateStaffPushToken = async (id) => {
 // Explicit, admin-only real-device-test trigger — sends STAFF_PUSH to the
 // calling admin's own registered devices only. Never called automatically.
 export const triggerTestStaffPush = async () => {
-  const response = await fetch(`${BASE_URL}/notifications/admin/test-staff-push`, {
+  const response = await authenticatedFetch(`${BASE_URL}/notifications/admin/test-staff-push`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    headers: { 'Content-Type': 'application/json' },
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to trigger test staff push');
@@ -486,38 +537,28 @@ export const triggerTestStaffPush = async () => {
 
 // ===== STAFF/OWNER NOTIFICATION CENTER =====
 export const getMyStaffNotifications = async (page = 1) => {
-  const response = await fetch(`${BASE_URL}/notifications/staff/me?page=${page}`, {
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/notifications/staff/me?page=${page}`);
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to fetch notifications');
   return result;
 };
 
 export const getMyStaffUnreadCount = async () => {
-  const response = await fetch(`${BASE_URL}/notifications/staff/me/unread-count`, {
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/notifications/staff/me/unread-count`);
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to fetch unread count');
   return result;
 };
 
 export const markAllStaffNotificationsRead = async () => {
-  const response = await fetch(`${BASE_URL}/notifications/staff/me/read-all`, {
-    method: 'PATCH',
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/notifications/staff/me/read-all`, { method: 'PATCH' });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to mark notifications read');
   return result;
 };
 
 export const markStaffNotificationRead = async (id) => {
-  const response = await fetch(`${BASE_URL}/notifications/staff/me/${id}/read`, {
-    method: 'PATCH',
-    headers: await authHeaders(),
-  });
+  const response = await authenticatedFetch(`${BASE_URL}/notifications/staff/me/${id}/read`, { method: 'PATCH' });
   const result = await response.json();
   if (!response.ok) throw new Error(result.message || 'Failed to mark notification read');
   return result;

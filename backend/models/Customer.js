@@ -10,6 +10,11 @@ const customerSchema = new mongoose.Schema(
     createdBy: { type: String, default: 'Owner' },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
+    // First time this customer's browser reported running the Customer App
+    // PWA in standalone display mode (i.e. launched from an installed home
+    // screen icon, not a regular browser tab). Set once, never overwritten —
+    // see customerAuth.controller.js markPwaInstalled.
+    pwaInstalledAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

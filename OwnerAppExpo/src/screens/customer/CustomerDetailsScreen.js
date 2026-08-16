@@ -19,6 +19,7 @@ import {
   updateDevice,
   deleteDevice,
   createSubscription,
+  updateSubscription,
   renewSubscription,
   deleteSubscription,
   getPlans,
@@ -125,12 +126,22 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
   // device), so "which one is being renewed" is tracked by id rather than
   // a single global flag.
   const [renewTargetId, setRenewTargetId] = useState(null);
+  // Which subscription's details are being edited in place (plan, price,
+  // dates, employee, portal) — separate from renewTargetId since Edit
+  // updates the existing document rather than expiring it and creating a
+  // new one.
+  const [editTargetId, setEditTargetId] = useState(null);
   const [showAddSubForm, setShowAddSubForm] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [selectedPortal, setSelectedPortal] = useState(null);
   const [subStartingDate, setSubStartingDate] = useState(new Date().toISOString());
   const [subPanelAddedDays, setSubPanelAddedDays] = useState('');
+  // Guards Add/Renew/Edit against a duplicate submission from a fast
+  // double-tap — each of the three save handlers checks and sets this
+  // before their await, so a second tap while the first request is still
+  // in flight is a no-op instead of creating a second subscription.
+  const [savingSubscription, setSavingSubscription] = useState(false);
   // Same reasoning as renewTargetId: which subscription's "+ Add Panel Days"
   // form is open, since a customer can have several Active subscriptions.
   const [panelDaysTargetId, setPanelDaysTargetId] = useState(null);
@@ -266,6 +277,8 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
   const latestSubscription = subscriptions[0];
   const subscriptionToRenew = subscriptions.find((s) => s._id === renewTargetId) || null;
   const showRenewForm = !!renewTargetId;
+  const subscriptionToEdit = subscriptions.find((s) => s._id === editTargetId) || null;
+  const showEditForm = !!editTargetId;
   // A customer can run several concurrent subscriptions (one per device);
   // this is the only way to tell which physical device a given subscription
   // card belongs to. Resolved purely from the existing device reference on
@@ -294,7 +307,34 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
     setSubPanelAddedDays('');
     setSubMacAddress('');
     setRenewTargetId(null);
+    setEditTargetId(null);
     setShowAddSubForm(false);
+  };
+
+  // Opens the Edit form pre-filled with this subscription's current values.
+  // Plan/Employee/Portal are matched back to their master-list entry (by id
+  // first, falling back to a name match for older records saved before
+  // planId/employeeId/portalId existed) so the picker shows the right chip
+  // already selected — but if no match is found (a renamed/deleted plan),
+  // nothing is pre-selected and the owner must choose one, same as Add/Renew.
+  const openEditForm = (sub) => {
+    const matchedPlan =
+      plans.find((p) => p._id === sub.planId) || plans.find((p) => p.name === sub.plan) || null;
+    const matchedEmployee =
+      employees.find((e) => e._id === sub.employeeId) ||
+      employees.find((e) => e.employeeName === sub.employeeName) ||
+      null;
+    const matchedPortal =
+      portals.find((p) => p._id === sub.portalId) || portals.find((p) => p.portalUrl === sub.portalUrl) || null;
+
+    setSelectedPlan(matchedPlan);
+    setSelectedEmployee(matchedEmployee);
+    setSelectedPortal(matchedPortal);
+    setSubStartingDate(new Date(sub.startingDate).toISOString());
+    setSubPanelAddedDays(String(sub.panelAddedDays || 0));
+    setRenewTargetId(null);
+    setShowAddSubForm(false);
+    setEditTargetId(sub._id);
   };
 
   const handleSaveRenew = async () => {
@@ -302,6 +342,8 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
       Alert.alert('Missing info', 'Please select a plan.');
       return;
     }
+    if (savingSubscription) return;
+    setSavingSubscription(true);
     try {
       await renewSubscription({
         oldSubscriptionId: subscriptionToRenew?._id,
@@ -323,6 +365,8 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
       loadProfile();
     } catch (error) {
       Alert.alert('Error', 'Could not renew subscription.');
+    } finally {
+      setSavingSubscription(false);
     }
   };
 
@@ -331,6 +375,8 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
       Alert.alert('Missing info', 'Please select a plan.');
       return;
     }
+    if (savingSubscription) return;
+    setSavingSubscription(true);
     try {
       await createSubscription({
         customer: customer._id,
@@ -358,6 +404,38 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
       } else {
         Alert.alert('Error', 'Could not add subscription.');
       }
+    } finally {
+      setSavingSubscription(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedPlan) {
+      Alert.alert('Missing info', 'Please select a plan.');
+      return;
+    }
+    if (savingSubscription) return;
+    setSavingSubscription(true);
+    try {
+      await updateSubscription(subscriptionToEdit._id, {
+        plan: selectedPlan.name,
+        planId: selectedPlan._id,
+        priceUSD: selectedPlan.priceUSD,
+        durationType: selectedPlan.durationType,
+        durationValue: selectedPlan.durationValue,
+        startingDate: subStartingDate,
+        panelAddedDays: subPanelAddedDays,
+        employeeId: selectedEmployee?._id,
+        employeeName: selectedEmployee?.employeeName,
+        portalId: selectedPortal?._id,
+        portalUrl: selectedPortal?.portalUrl,
+      });
+      resetSubForm();
+      loadProfile();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Could not update subscription.');
+    } finally {
+      setSavingSubscription(false);
     }
   };
 
@@ -432,18 +510,29 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleDeleteSubscription = (id) => {
-    Alert.alert('Delete Subscription', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteSubscription(id);
-          loadProfile();
+  const handleDeleteSubscription = (id, status) => {
+    const isActive = status === 'Active';
+    Alert.alert(
+      'Delete Subscription',
+      isActive
+        ? 'This subscription is currently ACTIVE. Deleting it cannot be undone — only do this for a genuine duplicate (e.g. one created by an accidental double-tap). Are you sure?'
+        : 'Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteSubscription(id);
+              loadProfile();
+            } catch (error) {
+              Alert.alert('Error', 'Could not delete subscription.');
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   if (loading) {
@@ -588,6 +677,14 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                     {sub.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
                   </Text>
                 </TouchableOpacity>
+                <TouchableOpacity style={styles.editSubButton} onPress={() => openEditForm(sub)}>
+                  <Text style={styles.editSubButtonText}>Edit Details</Text>
+                </TouchableOpacity>
+                {/* Active subscriptions aren't normally deleted — this exists specifically to
+                    remove genuine duplicates left over from the fixed double-tap bug. */}
+                <TouchableOpacity onPress={() => handleDeleteSubscription(sub._id, sub.status)}>
+                  <Text style={styles.deleteLink}>Delete</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.addPanelDaysButton}
@@ -708,6 +805,9 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                     {latestSubscription.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
                   </Text>
                 </TouchableOpacity>
+                <TouchableOpacity style={styles.editSubButton} onPress={() => openEditForm(latestSubscription)}>
+                  <Text style={styles.editSubButtonText}>Edit Details</Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -715,10 +815,12 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
               <Text style={styles.emptyText}>No active subscription. Add one below.</Text>
             )}
 
-            {(showRenewForm || showAddSubForm) && (
+            {(showRenewForm || showAddSubForm || showEditForm) && (
               <View style={styles.inlineForm}>
                 <Text style={styles.formTitle}>
-                  {showRenewForm
+                  {showEditForm
+                    ? 'Edit Subscription Details'
+                    : showRenewForm
                     ? subscriptionToRenew?.priceUSD === 0
                       ? 'Convert to Paid'
                       : 'Renew Subscription'
@@ -782,20 +884,30 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                   ))}
                 </View>
 
-                <Text style={styles.label}>
-                  {showRenewForm ? 'MAC Address (device for this subscription)' : 'MAC Address (new device)'}
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 00:1A:79:F2:11:4F"
-                  placeholderTextColor={colors.textMuted}
-                  value={subMacAddress}
-                  onChangeText={setSubMacAddress}
-                  autoCapitalize="characters"
-                />
-                {showRenewForm && (
+                {!showEditForm && (
+                  <>
+                    <Text style={styles.label}>
+                      {showRenewForm ? 'MAC Address (device for this subscription)' : 'MAC Address (new device)'}
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 00:1A:79:F2:11:4F"
+                      placeholderTextColor={colors.textMuted}
+                      value={subMacAddress}
+                      onChangeText={setSubMacAddress}
+                      autoCapitalize="characters"
+                    />
+                    {showRenewForm && (
+                      <Text style={styles.hintNote}>
+                        Already correct? Leave as is. Known MACs are reused — this does not create a duplicate device.
+                      </Text>
+                    )}
+                  </>
+                )}
+                {showEditForm && (
                   <Text style={styles.hintNote}>
-                    Already correct? Leave as is. Known MACs are reused — this won't create a duplicate device.
+                    Device is not changed here — use the Assign Device option on the card to change which device
+                    this subscription is linked to.
                   </Text>
                 )}
 
@@ -817,11 +929,16 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                 />
 
                 <TouchableOpacity
-                  style={styles.saveSmallButton}
-                  onPress={showRenewForm ? handleSaveRenew : handleSaveAddSubscription}
+                  style={[styles.saveSmallButton, savingSubscription && styles.saveSmallButtonDisabled]}
+                  disabled={savingSubscription}
+                  onPress={showEditForm ? handleSaveEdit : showRenewForm ? handleSaveRenew : handleSaveAddSubscription}
                 >
                   <Text style={styles.saveSmallButtonText}>
-                    {showRenewForm
+                    {savingSubscription
+                      ? 'Saving…'
+                      : showEditForm
+                      ? 'Save Changes'
+                      : showRenewForm
                       ? subscriptionToRenew?.priceUSD === 0
                         ? 'Confirm Conversion'
                         : 'Confirm Renewal'
@@ -834,10 +951,10 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
               </View>
             )}
 
-            {!showRenewForm && !showAddSubForm && (
+            {!showRenewForm && !showAddSubForm && !showEditForm && (
               <TouchableOpacity
                 style={styles.addSmallButton}
-                onPress={() => { setShowAddSubForm(true); setShowRenewForm(false); }}
+                onPress={() => { setShowAddSubForm(true); setRenewTargetId(null); setEditTargetId(null); }}
               >
                 <Text style={styles.addSmallButtonText}>+ Add Another Subscription</Text>
               </TouchableOpacity>
@@ -903,16 +1020,21 @@ const CustomerDetailsScreen = ({ route, navigation }) => {
                         </>
                       )}
                       {!alreadyFeaturedAtTop && (
-                        <TouchableOpacity
-                          style={styles.renewButton}
-                          onPress={() => { setRenewTargetId(s._id); setSubMacAddress(dev?.macAddress || ''); setShowAddSubForm(false); }}
-                        >
-                          <Text style={styles.renewButtonText}>
-                            {s.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
-                          </Text>
-                        </TouchableOpacity>
+                        <>
+                          <TouchableOpacity
+                            style={styles.renewButton}
+                            onPress={() => { setRenewTargetId(s._id); setSubMacAddress(dev?.macAddress || ''); setShowAddSubForm(false); }}
+                          >
+                            <Text style={styles.renewButtonText}>
+                              {s.priceUSD === 0 ? 'Convert to Paid' : 'Renew Subscription'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.editSubButton} onPress={() => openEditForm(s)}>
+                            <Text style={styles.editSubButtonText}>Edit Details</Text>
+                          </TouchableOpacity>
+                        </>
                       )}
-                      <TouchableOpacity onPress={() => handleDeleteSubscription(s._id)}>
+                      <TouchableOpacity onPress={() => handleDeleteSubscription(s._id, s.status)}>
                         <Text style={styles.deleteLink}>Delete</Text>
                       </TouchableOpacity>
                     </View>
@@ -1151,6 +1273,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveSmallButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 13 },
+  saveSmallButtonDisabled: { opacity: 0.6 },
   emptyText: { ...typography.bodyMuted, textAlign: 'center', marginTop: 20 },
   card: {
     ...commonStyles.card,
@@ -1203,6 +1326,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   renewButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 13 },
+  editSubButton: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  editSubButtonText: { color: colors.primary, fontWeight: '600', fontSize: 13 },
   formTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
   planRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm },
   planChip: {

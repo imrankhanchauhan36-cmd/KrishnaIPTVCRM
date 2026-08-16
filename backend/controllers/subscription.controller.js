@@ -117,6 +117,89 @@ exports.createSubscription = async (req, res) => {
   }
 };
 
+// EDIT: corrects an existing subscription's own details in place (plan,
+// price, duration, starting date, panel days, employee, portal) — never
+// touches status or device (those already have their own dedicated
+// endpoints: PATCH /:id/status and PATCH /:id/device). durationType/
+// durationValue aren't stored on the document itself (only the dates they
+// produce are), so every edit must resupply them — same requirement the
+// Renew form already has — to correctly recompute renewalDate. panelExpiryDate
+// is recomputed from startingDate + panelAddedDays, preserving the existing
+// invariant that addPanelDays' cumulative panelAddedDays value depends on.
+exports.updateSubscription = async (req, res) => {
+  try {
+    const {
+      plan,
+      priceUSD,
+      durationType,
+      durationValue,
+      startingDate,
+      panelAddedDays,
+      planId,
+      employeeId,
+      employeeName,
+      portalId,
+      portalUrl,
+    } = req.body;
+
+    const subscription = await Subscription.findById(req.params.id);
+    if (!subscription) return res.status(404).json({ message: 'Subscription not found' });
+
+    if ((!plan && !planId) || priceUSD === undefined || priceUSD === null || !durationType || !durationValue || !startingDate) {
+      return res.status(400).json({ message: 'Missing required fields to update this subscription' });
+    }
+
+    const planRef = await resolvePlanReference(planId);
+    const employeeRef = await resolveEmployeeReference(employeeId);
+    const portalRef = await resolvePortalReference(portalId);
+    const finalPlanName = planRef ? planRef.planName : plan;
+
+    const renewalDate = calculateRenewalDate(startingDate, durationType, durationValue);
+    const panelExpiryDate = calculateInitialPanelExpiry(startingDate, panelAddedDays);
+
+    const before = {
+      plan: subscription.plan,
+      priceUSD: subscription.priceUSD,
+      startingDate: subscription.startingDate,
+      renewalDate: subscription.renewalDate,
+    };
+
+    subscription.plan = finalPlanName;
+    subscription.priceUSD = Number(priceUSD);
+    subscription.startingDate = new Date(startingDate);
+    subscription.panelAddedDays = panelAddedDays ? Number(panelAddedDays) : 0;
+    subscription.renewalDate = renewalDate;
+    subscription.panelExpiryDate = panelExpiryDate;
+    if (planRef) subscription.planId = planRef.planId;
+    if (employeeRef) {
+      subscription.employeeId = employeeRef.employeeId;
+      subscription.employeeName = employeeRef.employeeName;
+    } else if (employeeName !== undefined) {
+      subscription.employeeName = employeeName;
+    }
+    if (portalRef) {
+      subscription.portalId = portalRef.portalId;
+      subscription.portalUrl = portalRef.portalUrl;
+    } else if (portalUrl !== undefined) {
+      subscription.portalUrl = portalUrl;
+    }
+
+    const saved = await subscription.save();
+
+    await logActivity({
+      customer: subscription.customer,
+      action: 'Subscription Edited',
+      description: `Edited subscription: "${before.plan}" ($${before.priceUSD}, renews ${new Date(before.renewalDate).toDateString()}) → "${finalPlanName}" ($${saved.priceUSD}, renews ${new Date(saved.renewalDate).toDateString()})`,
+      performedByName: req.user?.fullName || 'Owner',
+      performedByType: req.user?.userType || 'Admin',
+    });
+
+    res.json(saved);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 // RENEW: expires the old subscription, creates a fresh Active one
 exports.renewSubscription = async (req, res) => {
   try {

@@ -77,6 +77,9 @@ export const logoutApi = (refreshToken: string) =>
 
 export const getMe = () => request<MeResponse>('/customer-auth/me');
 
+export const markPwaInstalled = () =>
+  request<{ pwaInstalledAt: string }>('/customer-auth/me/mark-installed', { method: 'PATCH' });
+
 // ===== Notifications =====
 export const getMyNotifications = () =>
   request<{ notifications: NotificationItem[]; total: number }>('/notifications/me');

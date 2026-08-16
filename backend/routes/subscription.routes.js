@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getSubscriptionsByCustomer,
   createSubscription,
+  updateSubscription,
   renewSubscription,
   addPanelDays,
   updateSubscriptionStatus,
@@ -16,6 +17,7 @@ router.post('/renew', renewSubscription);
 router.post('/:id/add-panel-days', addPanelDays);
 router.patch('/:id/status', updateSubscriptionStatus);
 router.patch('/:id/device', assignDevice);
+router.patch('/:id', updateSubscription);
 router.delete('/:id', deleteSubscription);
 
 module.exports = router;

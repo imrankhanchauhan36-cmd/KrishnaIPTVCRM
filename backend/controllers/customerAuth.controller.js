@@ -96,3 +96,28 @@ exports.getMe = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// PATCH /api/customer-auth/me/mark-installed — called by the Customer App
+// once it detects it's running in standalone display mode (i.e. launched
+// from an installed home screen icon). Idempotent: only ever sets
+// pwaInstalledAt the first time, so it stays a true "first installed at"
+// timestamp no matter how many times the app reports it.
+exports.markPwaInstalled = async (req, res) => {
+  try {
+    if (req.user.userType !== 'Customer') {
+      return res.status(403).json({ message: 'This endpoint is for customer accounts only' });
+    }
+
+    const customer = await Customer.findOne({ _id: req.user.id, isDeleted: false });
+    if (!customer) return res.status(404).json({ message: 'Account not found' });
+
+    if (!customer.pwaInstalledAt) {
+      customer.pwaInstalledAt = new Date();
+      await customer.save();
+    }
+
+    res.json({ pwaInstalledAt: customer.pwaInstalledAt });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

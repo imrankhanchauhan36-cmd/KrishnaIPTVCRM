@@ -27,6 +27,8 @@ exports.getDashboardStats = async (req, res) => {
       tomorrowsRenewals,
       next7DaysRenewals,
       monthlySubscriptions,
+      totalCustomers,
+      pwaInstalledCustomers,
     ] = await Promise.all([
       Customer.countDocuments({ status: 'Active', isDeleted: false }),
       Customer.countDocuments({ status: 'Expired', isDeleted: false }),
@@ -45,6 +47,8 @@ exports.getDashboardStats = async (req, res) => {
       Subscription.find({
         startingDate: { $gte: monthStart, $lt: monthEnd },
       }),
+      Customer.countDocuments({ isDeleted: false }),
+      Customer.countDocuments({ isDeleted: false, pwaInstalledAt: { $ne: null } }),
     ]);
 
     const monthlyRevenue = monthlySubscriptions.reduce((sum, s) => sum + (s.priceUSD || 0), 0);
@@ -57,6 +61,8 @@ exports.getDashboardStats = async (req, res) => {
       activeCustomers,
       monthlyRevenue,
       pendingPayments: 0,
+      totalCustomers,
+      pwaInstalledCustomers,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
